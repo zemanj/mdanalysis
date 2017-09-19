@@ -33,7 +33,7 @@ inline int sqmIndex(int colsn, int row, int col) { // array index for square mat
 	return row*colsn + col;
 }
 
-float min(float * values, int length) { //array min
+float minn(float * values, int length) { //array min
 	float min = values[0];
 	for (int i=1;i<length;i++) {
 		if (values[i] < min) {
@@ -43,7 +43,7 @@ float min(float * values, int length) { //array min
 	return min;
 }
 
-float max(float * values, int length) { //array max
+float maxx(float * values, int length) { //array max
 	float max = values[0];
 	for (int i=1;i<length;i++) {
 		if (values[i] > max) {

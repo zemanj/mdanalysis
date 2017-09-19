@@ -2510,8 +2510,8 @@ static int xdrstdio_getlong (XDR *, int32_t *);
 static int xdrstdio_putlong (XDR *, int32_t *);
 static int xdrstdio_getbytes (XDR *, char *, unsigned int);
 static int xdrstdio_putbytes (XDR *, char *, unsigned int);
-static off_t xdrstdio_getpos (XDR *);
-static int xdrstdio_setpos (XDR *, off_t, int);
+static int xdrstdio_getpos (XDR *);
+static int xdrstdio_setpos (XDR *, int, int);
 static void xdrstdio_destroy (XDR *);
 
 /*
@@ -2593,14 +2593,14 @@ xdrstdio_putbytes (XDR *xdrs, char *addr, unsigned int len)
 }
 
 
-static off_t
+static int
 xdrstdio_getpos (XDR *xdrs)
 {
-    return ftello((FILE *) xdrs->x_private);
+    return ftell((FILE *) xdrs->x_private);
 }
 
 static int
-xdrstdio_setpos (XDR *xdrs, off_t pos, int whence)
+xdrstdio_setpos (XDR *xdrs, int pos, int whence)
 {
     /* A reason for failure can be filesystem limits on allocation units,
      * before the actual off_t overflow (ext3, with a 4K clustersize,
@@ -2608,7 +2608,7 @@ xdrstdio_setpos (XDR *xdrs, off_t pos, int whence)
     /* We return errno relying on the fact that it is never set to 0 on
      * success, which means that if an error occurrs it'll never be the same
      * as exdrOK, and xdr_seek won't be confused.*/
-	return fseeko((FILE *) xdrs->x_private, pos, whence) < 0 ? errno : exdrOK;
+	return fseek((FILE *) xdrs->x_private, pos, whence) < 0 ? errno : exdrOK;
 }
 
 
@@ -2622,7 +2622,7 @@ int xdr_seek(XDRFILE *xd, int64_t pos, int whence)
 /* Seeks to position in file */
 {
     int result;
-    if ((result = xdrstdio_setpos(xd->xdr, (off_t) pos, whence)) != 0)
+    if ((result = xdrstdio_setpos(xd->xdr, (int) pos, whence)) != 0)
         return result;
 
     return exdrOK;
