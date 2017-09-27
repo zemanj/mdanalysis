@@ -2615,7 +2615,7 @@ xdrstdio_getpos (XDR *xdrs)
 }
 
 static int
-xdrstdio_setpos (XDR *xdrs, int pos, int whence)
+xdrstdio_setpos (XDR *xdrs, off_t pos, int whence)
 {
     /* A reason for failure can be filesystem limits on allocation units,
      * before the actual off_t overflow (ext3, with a 4K clustersize,
@@ -2623,7 +2623,13 @@ xdrstdio_setpos (XDR *xdrs, int pos, int whence)
     /* We return errno relying on the fact that it is never set to 0 on
      * success, which means that if an error occurrs it'll never be the same
      * as exdrOK, and xdr_seek won't be confused.*/
-	return fseek((FILE *) xdrs->x_private, pos, whence) < 0 ? errno : exdrOK;
+    #ifdef __unix__
+	return fseeko((FILE *) xdrs->x_private, pos, whence) < 0 ? errno : exdrOK;
+    #endif
+
+    #ifdef _WIN32
+	return _fseeki64((FILE *) xdrs->x_private, pos, whence) < 0 ? errno : exdrOK;
+    #endif
 }
 
 
@@ -2637,7 +2643,7 @@ int xdr_seek(XDRFILE *xd, int64_t pos, int whence)
 /* Seeks to position in file */
 {
     int result;
-    if ((result = xdrstdio_setpos(xd->xdr, (int) pos, whence)) != 0)
+    if ((result = xdrstdio_setpos(xd->xdr, (off_t) pos, whence)) != 0)
         return result;
 
     return exdrOK;
