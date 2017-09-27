@@ -44,6 +44,15 @@
 #  include <inttypes.h>
 #endif
 
+#include <sys/types.h>
+
+#ifdef __unix__
+    #include <unistd.h>
+#endif
+
+#ifdef _WIN32
+    #include <io.h>
+#endif
 
 #ifdef HAVE_RPC_XDR_H
 #  include <rpc/rpc.h>
@@ -2510,8 +2519,8 @@ static int xdrstdio_getlong (XDR *, int32_t *);
 static int xdrstdio_putlong (XDR *, int32_t *);
 static int xdrstdio_getbytes (XDR *, char *, unsigned int);
 static int xdrstdio_putbytes (XDR *, char *, unsigned int);
-static int xdrstdio_getpos (XDR *);
-static int xdrstdio_setpos (XDR *, int, int);
+static off_t xdrstdio_getpos (XDR *);
+static int xdrstdio_setpos (XDR *, off_t, int);
 static void xdrstdio_destroy (XDR *);
 
 /*
@@ -2593,10 +2602,16 @@ xdrstdio_putbytes (XDR *xdrs, char *addr, unsigned int len)
 }
 
 
-static int
+static off_t
 xdrstdio_getpos (XDR *xdrs)
 {
-    return ftell((FILE *) xdrs->x_private);
+    #ifdef __unix__
+    return ftello((FILE *) xdrs->x_private);
+    #endif
+
+    #ifdef _WIN32
+    return _ftelli64((FILE *) xdrs->x_private);
+    #endif
 }
 
 static int
