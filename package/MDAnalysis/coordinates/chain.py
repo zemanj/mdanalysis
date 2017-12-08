@@ -79,7 +79,7 @@ class ChainReader(base.ProtoReader):
     """
     format = 'CHAIN'
 
-    def __init__(self, filenames, **kwargs):
+    def __init__(self, filenames, skip=1, dt=None, **kwargs):
         """Set up the chain reader.
 
         Parameters
@@ -108,25 +108,17 @@ class ChainReader(base.ProtoReader):
         **kwargs : dict (optional)
           all other keyword arguments are passed on to each trajectory reader
           unchanged
-
-
-        .. versionchanged:: 0.8
-           The ``delta`` keyword was added.
-        .. versionchanged:: 0.13
-           The ``delta`` keyword was deprecated in favor of using ``dt``.
-
         """
         super(ChainReader, self).__init__()
 
         self.filenames = asiterable(filenames)
-        self.readers = [core.reader(filename, **kwargs)
+        self.readers = [core.reader(filename, dt=dt, **kwargs)
                         for filename in self.filenames]
         # pointer to "active" trajectory index into self.readers
         self.__active_reader_index = 0
 
-        self.skip = kwargs.get('skip', 1)
+        self.skip = skip
         self.n_atoms = self._get_same('n_atoms')
-        #self.fixed = self._get_same('fixed')
 
         # Translation between virtual frames and frames in individual
         # trajectories.
@@ -173,8 +165,11 @@ class ChainReader(base.ProtoReader):
 
         Returns
         -------
-        (i, f) : tuple
-            **local frame** tuple
+        i : int
+            trajectory
+        f : int
+            frame in trajectory i
+
 
         Raises
         ------
@@ -288,7 +283,7 @@ class ChainReader(base.ProtoReader):
         values = np.array(self._get(attr))
         value = values[0]
         if not np.all(values == value):
-            bad_traj = np.array([self._get_filename(fn) for fn in self.filenames])[values != value]
+            bad_traj = np.array(self.filenames)[values != value]
             raise ValueError("The following trajectories do not have the correct {0} "
                              " ({1}):\n{2}".format(attr, value, bad_traj))
         return value
@@ -371,17 +366,11 @@ class ChainReader(base.ProtoReader):
         for ts in self.__chained_trajectories_iter:
             yield ts
 
-    @staticmethod
-    def _get_filename(filename):
-        """retrieve the actual filename of the list element"""
-        return filename[0] if isinstance(filename, tuple) else filename
-
     def __repr__(self):
         return ("<{clsname} {fname} with {nframes} frames of {natoms} atoms>"
                 "".format(
                     clsname=self.__class__.__name__,
-                    fname=[os.path.basename(self._get_filename(fn))
-                           for fn in self.filenames],
+                    fname=[os.path.basename(fn) for fn in self.filenames],
                     nframes=self.n_frames,
                     natoms=self.n_atoms))
 
