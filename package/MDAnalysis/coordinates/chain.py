@@ -79,35 +79,39 @@ class ChainReader(base.ProtoReader):
     """
     format = 'CHAIN'
 
-    def __init__(self, filenames, skip=1, dt=None, **kwargs):
-        """Set up the chain reader.
+    def __init__(self, filenames, skip=1, dt=None, continuous=False, **kwargs):
+        """Set up the chain reader. This can also be used similar to `gmx trjcat` to
+        treat several parts of a long simulation as a single trajectory.
 
         Parameters
         ----------
         filenames : str or list or sequence
-           file name or list of file names; the reader will open all file names
-           and provide frames in the order of trajectories from the list. Each
-           trajectory must contain the same number of atoms in the same order
-           (i.e. they all must belong to the same topology). The trajectory
-           format is deduced from the extension of each file name.
+            file name or list of file names; the reader will open all file names
+            and provide frames in the order of trajectories from the list. Each
+            trajectory must contain the same number of atoms in the same order
+            (i.e. they all must belong to the same topology). The trajectory
+            format is deduced from the extension of each file name.
 
-           Extension: `filenames` are either a single file name or list of file
-           names in either plain file names format or ``(filename, format)``
-           tuple combination. This allows explicit setting of the format for
-           each individual trajectory file.
+            Extension: `filenames` are either a single file name or list of file
+            names in either plain file names format or ``(filename, format)``
+            tuple combination. This allows explicit setting of the format for
+            each individual trajectory file.
         skip : int (optional)
-           skip step (also passed on to the individual trajectory readers);
-           must be same for all trajectories
+            skip step (also passed on to the individual trajectory readers);
+            must be same for all trajectories
         dt : float (optional)
-          Passed to individual trajectory readers to enforce a common time
-          difference between frames, in MDAnalysis time units. If not set, each
-          reader's `dt` will be used (either inferred from the trajectory
-          files, or set to the reader's default) when reporting frame times;
-          note that this might lead an inconsistent time difference between
-          frames.
+            Passed to individual trajectory readers to enforce a common time
+            difference between frames, in MDAnalysis time units. If not set, each
+            reader's `dt` will be used (either inferred from the trajectory
+            files, or set to the reader's default) when reporting frame times;
+            note that this might lead an inconsistent time difference between
+            frames.
+        continuous : bool (optional)
+            treat all trajectories as one single long trajectory. Adds several checks.
         **kwargs : dict (optional)
-          all other keyword arguments are passed on to each trajectory reader
-          unchanged
+            all other keyword arguments are passed on to each trajectory reader
+            unchanged
+
         """
         super(ChainReader, self).__init__()
 
@@ -121,17 +125,15 @@ class ChainReader(base.ProtoReader):
         self.n_atoms = self._get_same('n_atoms')
 
         # Translation between virtual frames and frames in individual
-        # trajectories.
-        # Assumes that individual trajectories i contain frames that can
-        # be addressed with an index 0 <= f < n_frames[i]
+        # trajectories. Assumes that individual trajectories i contain frames
+        # that can be addressed with an index 0 <= f < n_frames[i]
 
-        # Build a map of frames: ordered list of starting virtual
-        # frames; the index i into this list corresponds to the index
-        # into self.readers
+        # Build a map of frames: ordered list of starting virtual frames; the
+        # index i into this list corresponds to the index into self.readers
         #
         # For virtual frame 0 <= k < sum(n_frames) find corresponding
-        # trajectory i and local frame f (i.e. readers[i][f] will
-        # correspond to ChainReader[k]).
+        # trajectory i and local frame f (i.e. readers[i][f] will correspond to
+        # ChainReader[k]).
 
         # build map 'start_frames', which is used by _get_local_frame()
         n_frames = self._get('n_frames')
@@ -145,6 +147,25 @@ class ChainReader(base.ProtoReader):
 
         #: source for trajectories frame (fakes trajectory)
         self.__chained_trajectories_iter = None
+
+        # calculate new start_frames to have a time continuous trajectory.
+        if continuous:
+            self.dt = np.get_same('dt')
+            sf = [0, ]
+            n_frames = 0
+            for r1, r2 in zip(self.readers[:-1], self.readers[1:]):
+                r2[0]
+                start_time = r2.time
+                # find end where trajectory was restarted from
+                for ts in r1[::-1]:
+                    if ts.time < start_time:
+                        break
+                sf.append(ts.frame)
+                n_frames += ts.frame
+
+            self.__start_frames = sf
+            self.totaltime = self.dt * n_frames
+            self.n_frames = n_frames
 
         # make sure that iteration always yields frame 0
         # rewind() also sets self.ts
