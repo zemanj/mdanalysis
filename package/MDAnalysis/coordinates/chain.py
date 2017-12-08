@@ -107,7 +107,10 @@ class ChainReader(base.ProtoReader):
             note that this might lead an inconsistent time difference between
             frames.
         continuous : bool (optional)
-            treat all trajectories as one single long trajectory. Adds several checks.
+            treat all trajectories as one single long trajectory. Adds several
+            checks. Might not work with all trajectory formats! This should
+            ensure that there is no need to concatenate trajectories of GROMACS
+            simulations
         **kwargs : dict (optional)
             all other keyword arguments are passed on to each trajectory reader
             unchanged
@@ -150,6 +153,7 @@ class ChainReader(base.ProtoReader):
 
         # calculate new start_frames to have a time continuous trajectory.
         if continuous:
+            # TODO: check for some filetype!
             self.dt = np.get_same('dt')
             sf = [0, ]
             n_frames = 0
