@@ -118,9 +118,10 @@ class ChainReader(base.ProtoReader):
         """
         super(ChainReader, self).__init__()
 
-        self.filenames = asiterable(filenames)
-        self.readers = [core.reader(filename, dt=dt, **kwargs)
-                        for filename in self.filenames]
+        filenames = asiterable(filenames)
+        self.readers = np.array([core.reader(filename, dt=dt, **kwargs)
+                                 for filename in filenames], dtype=object)
+        self.filenames = np.array([fn[0] if isinstance(fn, tuple) else fn for fn in filenames])
         # pointer to "active" trajectory index into self.readers
         self.__active_reader_index = 0
 
@@ -137,15 +138,14 @@ class ChainReader(base.ProtoReader):
         # For virtual frame 0 <= k < sum(n_frames) find corresponding
         # trajectory i and local frame f (i.e. readers[i][f] will correspond to
         # ChainReader[k]).
-
         # build map 'start_frames', which is used by _get_local_frame()
-        n_frames = self._get('n_frames')
+        n_frames = np.array(self._get('n_frames'))
         # [0]: frames are 0-indexed internally
         # (see Timestep.check_slice_indices())
         self.__start_frames = np.cumsum([0] + n_frames)
 
         self.n_frames = np.sum(n_frames)
-        self.dts = np.array(self._get('dt'))
+        self.dts = np.array([dt if dt is not None else 0 for dt in self._get('dt')])
         self.total_times = self.dts * n_frames
 
         #: source for trajectories frame (fakes trajectory)
@@ -154,21 +154,28 @@ class ChainReader(base.ProtoReader):
         # calculate new start_frames to have a time continuous trajectory.
         if continuous:
             # TODO: check for some filetype!
-            self.dt = np.get_same('dt')
+            # TODO: allow floating point precision in dt check
+            dt = self._get_same('dt')
+            # sort
+            sort_idx = np.argsort([r.ts.time for r in self.readers])
+            self.readers = self.readers[sort_idx]
+            self.filenames = self.filenames[sort_idx]
+            self.total_times = self.dts * n_frames[sort_idx]
+            # rebuild lookup table
             sf = [0, ]
             n_frames = 0
             for r1, r2 in zip(self.readers[:-1], self.readers[1:]):
-                r2[0]
+                r2[0], r1[0]
                 start_time = r2.time
                 # find end where trajectory was restarted from
                 for ts in r1[::-1]:
                     if ts.time < start_time:
                         break
                 sf.append(ts.frame)
-                n_frames += ts.frame
+                n_frames += ts.frame + 1
+            n_frames += self.readers[-1].n_frames
 
             self.__start_frames = sf
-            self.totaltime = self.dt * n_frames
             self.n_frames = n_frames
 
         # make sure that iteration always yields frame 0
@@ -343,6 +350,7 @@ class ChainReader(base.ProtoReader):
         :meth:`~ChainReader._get_local_frame`
 
         """
+        print("active R", self.__activate_reader)
         i, f = self._get_local_frame(frame)
         # seek to (1) reader i and (2) frame f in trajectory i
         self.__activate_reader(i)
@@ -350,6 +358,7 @@ class ChainReader(base.ProtoReader):
         # update Timestep
         self.ts = self.active_reader.ts
         self.ts.frame = frame  # continuous frames, 0-based
+        print(self.ts.time)
         return self.ts
 
     def _chained_iterator(self):
@@ -398,5 +407,3 @@ class ChainReader(base.ProtoReader):
                     fname=[os.path.basename(fn) for fn in self.filenames],
                     nframes=self.n_frames,
                     natoms=self.n_atoms))
-
-
