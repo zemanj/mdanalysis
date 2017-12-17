@@ -151,6 +151,10 @@ __all__ = [
     "legacy_DCD_NAMD_coords", # frame 0 read in for SiN_tric_namd.dcd using legacy DCD reader
     "legacy_DCD_c36_coords", # frames 1 and 4 read in for tip125_tric_C36.dcd using legacy DCD reader
     "GSD",
+    'twoatoms_gro',
+    'twoatoms_0',
+    'twoatoms_1',
+    'twoatoms_2',
 ]
 
 from pkg_resources import resource_filename
@@ -401,6 +405,12 @@ ALIGN_BOUND = resource_filename(__name__, 'data/analysis/align_bound.pdb.gz')
 ALIGN_UNBOUND = resource_filename(__name__, 'data/analysis/align_unbound.pdb.gz')
 
 GSD = resource_filename(__name__, 'data/example.gsd')
+
+# two atoms system taken from TPR to test chain readers
+twoatoms_gro = resource_filename(__name__, 'data/chainreader/twoatoms.gro')
+twoatoms_0 = resource_filename(__name__, 'data/chainreader/parts_0.xtc')
+twoatoms_1 = resource_filename(__name__, 'data/chainreader/parts_1.xtc')
+twoatoms_2 = resource_filename(__name__, 'data/chainreader/parts_2.xtc')
 
 # This should be the last line: clean up namespace
 del resource_filename
