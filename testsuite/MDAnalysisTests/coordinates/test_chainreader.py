@@ -31,7 +31,9 @@ from numpy.testing import (assert_equal, assert_almost_equal)
 
 import MDAnalysis as mda
 from MDAnalysisTests.datafiles import (PDB, PSF, CRD, DCD,
-                                       GRO, XTC, TRR, PDB_small, PDB_closed)
+                                       GRO, XTC, TRR, PDB_small, PDB_closed,
+                                       twoatoms_gro, twoatoms_0, twoatoms_1,
+                                       twoatoms_2)
 
 
 class TestChainReader(object):
@@ -145,12 +147,33 @@ class TestChainReaderFormats(object):
     def test_set_all_format_tuples(self):
         universe = mda.Universe(GRO, [(PDB, 'pdb'), (XTC, 'xtc'),
                                       (TRR, 'trr')])
-        assert_equal(universe.trajectory.n_frames, 21)
+        assert universe.trajectory.n_frames == 21
+        assert_equal(universe.trajectory.filenames, [PDB, XTC, TRR])
 
     def test_set_one_format_tuple(self):
         universe = mda.Universe(PSF, [(PDB_small, 'pdb'), DCD])
-        assert_equal(universe.trajectory.n_frames, 99)
+        assert universe.trajectory.n_frames == 99
 
     def test_set_all_formats(self):
         universe = mda.Universe(PSF, [PDB_small, PDB_closed], format='pdb')
-        assert_equal(universe.trajectory.n_frames, 2)
+        assert universe.trajectory.n_frames == 2
+
+
+class TestChainReaderContinuous(object):
+    @pytest.fixture
+    def top(self):
+        return twoatoms_gro
+
+    @pytest.fixture
+    def trajs(self):
+        return [twoatoms_0, twoatoms_1, twoatoms_2]
+
+    def test_length(self, top, trajs):
+        u = mda.Universe(top, trajs, continuous=True)
+        assert u.trajectory.n_frames == 10
+
+    def test_reorder(self, top, trajs):
+        u = mda.Universe(top, trajs[::-1], continuous=True)
+        assert u.trajectory.n_frames == 10
+        for i, ts in enumerate(u.trajectory):
+            assert_almost_equal(i, ts.time)
