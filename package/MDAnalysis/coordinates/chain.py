@@ -119,7 +119,11 @@ class ChainReader(base.ProtoReader):
         super(ChainReader, self).__init__()
 
         filenames = asiterable(filenames)
-        self.readers = np.array([core.reader(filename, dt=dt, **kwargs)
+        # Override here because single frame readers handle this argument as a
+        # kwarg to a timestep which behaves differently if dt is present or not.
+        if dt is not None:
+            kwargs['dt'] = dt
+        self.readers = np.array([core.reader(filename, **kwargs)
                                  for filename in filenames], dtype=object)
         self.filenames = np.array([fn[0] if isinstance(fn, tuple) else fn for fn in filenames])
         # pointer to "active" trajectory index into self.readers
