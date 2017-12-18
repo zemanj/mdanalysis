@@ -139,23 +139,26 @@ class ChainReader(base.ProtoReader):
         # trajectory i and local frame f (i.e. readers[i][f] will correspond to
         # ChainReader[k]).
         # build map 'start_frames', which is used by _get_local_frame()
-        n_frames = np.array(self._get('n_frames'))
+        n_frames = self._get('n_frames')
         # [0]: frames are 0-indexed internally
         # (see Timestep.check_slice_indices())
         self.__start_frames = np.cumsum([0] + n_frames)
 
         self.n_frames = np.sum(n_frames)
-        self.dts = np.array([dt if dt is not None else 0 for dt in self._get('dt')])
+        self.dts = np.array(self._get('dt'))
         self.total_times = self.dts * n_frames
 
         #: source for trajectories frame (fakes trajectory)
         self.__chained_trajectories_iter = None
 
         # calculate new start_frames to have a time continuous trajectory.
+        self._continuous = continuous # debug!
         if continuous:
             # TODO: check for some filetype!
             # TODO: allow floating point precision in dt check
             dt = self._get_same('dt')
+            n_frames = np.asarray(self._get('n_frames'))
+            self.dts = np.ones(self.dts.shape) * dt
             # sort
             sort_idx = np.argsort([r.ts.time for r in self.readers])
             self.readers = self.readers[sort_idx]
