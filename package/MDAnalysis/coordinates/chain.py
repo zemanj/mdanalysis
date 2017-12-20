@@ -371,14 +371,12 @@ class ChainReader(base.ProtoReader):
     def _chained_iterator(self):
         """Iterator that presents itself as a chained trajectory."""
         self._rewind()  # must rewind all readers
-        readers = itertools.chain(*self.readers)
-        for frame, ts in enumerate(readers):
-            ts.frame = frame  # fake continuous frames, 0-based
-            self.ts = ts
-            # make sure that the active reader is in sync
-            i, f = self._get_local_frame(frame)  # uses 0-based frames!
-            self.__activate_reader(i)
-            yield ts
+        for i in range(self.n_frames):
+            j, f = self._get_local_frame(i)
+            self.__activate_reader(j)
+            self.ts = self.active_reader[f]
+            self.ts.frame = i
+            yield self.ts
 
     def _read_next_timestep(self, ts=None):
         self.ts = next(self.__chained_trajectories_iter)
@@ -405,6 +403,7 @@ class ChainReader(base.ProtoReader):
         # start from first frame
         self.__chained_trajectories_iter = self._chained_iterator()
         for ts in self.__chained_trajectories_iter:
+            print(ts.time, self.active_reader)
             yield ts
 
     def __repr__(self):
