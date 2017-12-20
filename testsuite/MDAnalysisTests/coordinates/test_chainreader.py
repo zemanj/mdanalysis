@@ -171,6 +171,9 @@ class TestChainReaderContinuous(object):
     def test_length(self, top, trajs):
         u = mda.Universe(top, trajs, continuous=True)
         assert u.trajectory.n_frames == 10
+        for i in range(10):
+            ts = u.trajectory[i]
+            assert_almost_equal(i, ts.time)
 
     def test_reorder(self, top, trajs):
         u = mda.Universe(top, trajs[::-1], continuous=True)
