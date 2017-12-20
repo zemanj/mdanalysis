@@ -123,8 +123,8 @@ class ChainReader(base.ProtoReader):
         # kwarg to a timestep which behaves differently if dt is present or not.
         if dt is not None:
             kwargs['dt'] = dt
-        self.readers = np.array([core.reader(filename, **kwargs)
-                                 for filename in filenames], dtype=object)
+        self.readers = [core.reader(filename, **kwargs)
+                        for filename in filenames]
         self.filenames = np.array([fn[0] if isinstance(fn, tuple) else fn for fn in filenames])
         # pointer to "active" trajectory index into self.readers
         self.__active_reader_index = 0
@@ -156,7 +156,7 @@ class ChainReader(base.ProtoReader):
         self.__chained_trajectories_iter = None
 
         # calculate new start_frames to have a time continuous trajectory.
-        self._continuous = continuous # debug!
+        self._continuous = continuous  # debug!
         if continuous:
             # TODO: check for some filetype!
             # TODO: allow floating point precision in dt check
@@ -165,7 +165,7 @@ class ChainReader(base.ProtoReader):
             self.dts = np.ones(self.dts.shape) * dt
             # sort
             sort_idx = np.argsort([r.ts.time for r in self.readers])
-            self.readers = self.readers[sort_idx]
+            self.readers = [self.readers[i] for i in sort_idx]
             self.filenames = self.filenames[sort_idx]
             self.total_times = self.dts * n_frames[sort_idx]
             # rebuild lookup table
@@ -178,12 +178,14 @@ class ChainReader(base.ProtoReader):
                 for ts in r1[::-1]:
                     if ts.time < start_time:
                         break
-                sf.append(ts.frame)
+                sf.append(sf[-1] + ts.frame + 1)
                 n_frames += ts.frame + 1
+                print(sf)
             n_frames += self.readers[-1].n_frames
 
             self.__start_frames = sf
             self.n_frames = n_frames
+            self._sf = sf
 
         # make sure that iteration always yields frame 0
         # rewind() also sets self.ts
@@ -357,7 +359,6 @@ class ChainReader(base.ProtoReader):
         :meth:`~ChainReader._get_local_frame`
 
         """
-        print("active R", self.__activate_reader)
         i, f = self._get_local_frame(frame)
         # seek to (1) reader i and (2) frame f in trajectory i
         self.__activate_reader(i)
@@ -365,7 +366,6 @@ class ChainReader(base.ProtoReader):
         # update Timestep
         self.ts = self.active_reader.ts
         self.ts.frame = frame  # continuous frames, 0-based
-        print(self.ts.time)
         return self.ts
 
     def _chained_iterator(self):
