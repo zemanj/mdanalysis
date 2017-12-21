@@ -164,23 +164,26 @@ class ChainReader(base.ProtoReader):
             n_frames = np.asarray(self._get('n_frames'))
             self.dts = np.ones(self.dts.shape) * dt
             # sort
-            sort_idx = np.argsort([r.ts.time for r in self.readers])
+            times = [r.ts.time for r in self.readers]
+            sort_idx = np.argsort(times)
             self.readers = [self.readers[i] for i in sort_idx]
             self.filenames = self.filenames[sort_idx]
             self.total_times = self.dts * n_frames[sort_idx]
+
             # rebuild lookup table
             sf = [0, ]
             n_frames = 0
             for r1, r2 in zip(self.readers[:-1], self.readers[1:]):
                 r2[0], r1[0]
                 start_time = r2.time
+                if start_time > r1.n_frames * dt:
+                    raise RuntimeError("Missing frame in continuous chain")
                 # find end where trajectory was restarted from
                 for ts in r1[::-1]:
                     if ts.time < start_time:
                         break
                 sf.append(sf[-1] + ts.frame + 1)
                 n_frames += ts.frame + 1
-                print(sf)
             n_frames += self.readers[-1].n_frames
 
             self.__start_frames = sf

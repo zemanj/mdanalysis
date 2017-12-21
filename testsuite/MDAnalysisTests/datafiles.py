@@ -155,6 +155,7 @@ __all__ = [
     'twoatoms_0',
     'twoatoms_1',
     'twoatoms_2',
+    'twoatoms_1frame'
 ]
 
 from pkg_resources import resource_filename
@@ -411,6 +412,7 @@ twoatoms_gro = resource_filename(__name__, 'data/chainreader/twoatoms.gro')
 twoatoms_0 = resource_filename(__name__, 'data/chainreader/parts_0.xtc')
 twoatoms_1 = resource_filename(__name__, 'data/chainreader/parts_1.xtc')
 twoatoms_2 = resource_filename(__name__, 'data/chainreader/parts_2.xtc')
+twoatoms_1frame = resource_filename(__name__, 'data/chainreader/parts_0frame.xtc')
 
 # This should be the last line: clean up namespace
 del resource_filename

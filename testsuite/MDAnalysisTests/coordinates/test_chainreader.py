@@ -33,7 +33,7 @@ import MDAnalysis as mda
 from MDAnalysisTests.datafiles import (PDB, PSF, CRD, DCD,
                                        GRO, XTC, TRR, PDB_small, PDB_closed,
                                        twoatoms_gro, twoatoms_0, twoatoms_1,
-                                       twoatoms_2)
+                                       twoatoms_2, twoatoms_1frame)
 
 
 class TestChainReader(object):
@@ -180,3 +180,12 @@ class TestChainReaderContinuous(object):
         assert u.trajectory.n_frames == 10
         for i, ts in enumerate(u.trajectory):
             assert_almost_equal(i, ts.time)
+
+    def test_missing_frame(self, top, trajs):
+        with pytest.raises(RuntimeError):
+            mda.Universe(top, [trajs[0], trajs[-1]], continuous=True)
+
+    def test_exclude_frame_because_overal(self, top):
+        u = mda.Universe(top, [twoatoms_1frame, twoatoms_0], continuous=True)
+        print(u.trajectory._sf)
+        assert False
