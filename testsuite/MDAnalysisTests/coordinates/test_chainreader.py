@@ -32,8 +32,8 @@ from numpy.testing import (assert_equal, assert_almost_equal)
 import MDAnalysis as mda
 from MDAnalysisTests.datafiles import (PDB, PSF, CRD, DCD,
                                        GRO, XTC, TRR, PDB_small, PDB_closed,
-                                       twoatoms_gro, twoatoms_0, twoatoms_1,
-                                       twoatoms_2, twoatoms_1frame)
+                                       atom_gro, atom_0, atom_1,
+                                       atom_2, atom_single_frame, atom_0_dcd)
 
 
 class TestChainReader(object):
@@ -160,14 +160,16 @@ class TestChainReaderFormats(object):
 
 
 class TestChainReaderContinuous(object):
+    # description of the frame patterns to test are in comments as lists
     @pytest.fixture
     def top(self):
-        return twoatoms_gro
+        return atom_gro
 
     @pytest.fixture
     def trajs(self):
-        return [twoatoms_0, twoatoms_1, twoatoms_2]
+        return [atom_0, atom_1, atom_2]
 
+    # [0 1 2 3] [2 3 4 5 6] [5 6 7 8 9]
     def test_length(self, top, trajs):
         u = mda.Universe(top, trajs, continuous=True)
         assert u.trajectory.n_frames == 10
@@ -175,17 +177,20 @@ class TestChainReaderContinuous(object):
             ts = u.trajectory[i]
             assert_almost_equal(i, ts.time)
 
+    # [5 6 7 8 9] [2 3 4 5 6] [0 1 2 3]
     def test_reorder(self, top, trajs):
         u = mda.Universe(top, trajs[::-1], continuous=True)
         assert u.trajectory.n_frames == 10
         for i, ts in enumerate(u.trajectory):
             assert_almost_equal(i, ts.time)
 
+    # [0 1 2 3] [5 6 7 8 9]
     def test_missing_frame(self, top, trajs):
         with pytest.raises(RuntimeError):
             mda.Universe(top, [trajs[0], trajs[-1]], continuous=True)
 
-    def test_exclude_frame_because_overal(self, top):
-        u = mda.Universe(top, [twoatoms_1frame, twoatoms_0], continuous=True)
+    # [0] [0 1 2 3]
+    def test_exclude_frame(self, top):
+        u = mda.Universe(top, [atom_single_frame, atom_0_dcd], continuous=True)
         print(u.trajectory._sf)
         assert False
