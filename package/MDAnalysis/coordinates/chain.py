@@ -176,6 +176,11 @@ class ChainReader(base.ProtoReader):
             for r1, r2 in zip(self.readers[:-1], self.readers[1:]):
                 r2[0], r1[0]
                 start_time = r2.time
+
+                # trajectory doesn't contain valid frames
+                if r1.time >= start_time:
+                    continue
+
                 if start_time > r1.n_frames * dt:
                     raise RuntimeError("Missing frame in continuous chain")
                 # find end where trajectory was restarted from
@@ -184,6 +189,7 @@ class ChainReader(base.ProtoReader):
                         break
                 sf.append(sf[-1] + ts.frame + 1)
                 n_frames += ts.frame + 1
+
             n_frames += self.readers[-1].n_frames
 
             self.__start_frames = sf

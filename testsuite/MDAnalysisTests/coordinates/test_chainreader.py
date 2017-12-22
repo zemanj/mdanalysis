@@ -173,8 +173,7 @@ class TestChainReaderContinuous(object):
     def test_length(self, top, trajs):
         u = mda.Universe(top, trajs, continuous=True)
         assert u.trajectory.n_frames == 10
-        for i in range(10):
-            ts = u.trajectory[i]
+        for i, ts in enumerate(u.trajectory):
             assert_almost_equal(i, ts.time)
 
     # [5 6 7 8 9] [2 3 4 5 6] [0 1 2 3]
@@ -192,5 +191,7 @@ class TestChainReaderContinuous(object):
     # [0] [0 1 2 3]
     def test_exclude_frame(self, top):
         u = mda.Universe(top, [atom_single_frame, atom_0_dcd], continuous=True)
-        print(u.trajectory._sf)
+        assert u.trajectory.n_frames == 4
+        for i, ts in enumerate(u.trajectory):
+            assert_almost_equal(i, ts.time)
         assert False
