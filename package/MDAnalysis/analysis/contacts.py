@@ -452,6 +452,7 @@ class Contacts(AnalysisBase):
     def _conclude(self):
         self.timeseries = np.array(self.timeseries, dtype=float)
 
+    @deprecate(message="save() will be removed in 1.0.0")
     def save(self, outfile):
         """save contacts timeseries
 
@@ -459,6 +460,10 @@ class Contacts(AnalysisBase):
         ----------
         outfile : str
             file to save contacts
+
+
+        .. deprecated:: 0.17.0
+           Will be removed in the 1.0 release.
 
         """
         np.savetxt(outfile, self.timeseries,

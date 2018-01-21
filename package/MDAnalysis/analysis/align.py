@@ -192,6 +192,7 @@ from six.moves import range, zip, zip_longest
 from six import string_types
 
 import numpy as np
+from numpy.lib.utils import deprecate
 
 import Bio.SeqIO
 import Bio.AlignIO
@@ -677,7 +678,14 @@ class AlignTraj(AnalysisBase):
         if not self._verbose:
             logging.disable(logging.NOTSET)
 
+    @deprecate(message="save() will be removed in 1.0.0")
     def save(self, rmsdfile):
+        """save rmsd as a numpy array
+
+
+        .. deprecated:: 0.17.0
+           Will be removed in the 1.0 release.
+        """
         # these are the values of the new rmsd between the aligned trajectory
         # and reference structure
         np.savetxt(rmsdfile, self.rmsd)
