@@ -683,7 +683,7 @@ class AlignTraj(AnalysisBase):
         """save rmsd as a numpy array
 
 
-        .. deprecated:: 0.17.0
+        .. deprecated:: 0.17.1
            Will be removed in the 1.0 release.
         """
         # these are the values of the new rmsd between the aligned trajectory

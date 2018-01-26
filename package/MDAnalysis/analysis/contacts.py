@@ -462,7 +462,7 @@ class Contacts(AnalysisBase):
             file to save contacts
 
 
-        .. deprecated:: 0.17.0
+        .. deprecated:: 0.17.1
            Will be removed in the 1.0 release.
 
         """
