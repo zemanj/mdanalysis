@@ -179,6 +179,8 @@ class ChainReader(base.ProtoReader):
 
                 # trajectory doesn't contain valid frames
                 if r1.time >= start_time:
+                    # this ensure bisect works correctly
+                    sf.append(sf[-1])
                     continue
 
                 if start_time > r1.n_frames * dt:
@@ -198,6 +200,7 @@ class ChainReader(base.ProtoReader):
 
         # make sure that iteration always yields frame 0
         # rewind() also sets self.ts
+        self.start_frames = self.__start_frames
         self.ts = None
         self.rewind()
 

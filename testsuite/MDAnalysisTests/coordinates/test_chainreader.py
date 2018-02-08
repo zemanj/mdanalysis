@@ -30,10 +30,9 @@ import pytest
 from numpy.testing import (assert_equal, assert_almost_equal)
 
 import MDAnalysis as mda
-from MDAnalysisTests.datafiles import (PDB, PSF, CRD, DCD,
-                                       GRO, XTC, TRR, PDB_small, PDB_closed,
-                                       atom_gro, atom_0, atom_1,
-                                       atom_2, atom_single_frame, atom_0_dcd)
+from MDAnalysisTests.datafiles import (
+    PDB, PSF, CRD, DCD, GRO, XTC, TRR, PDB_small, PDB_closed, atom_gro, atom_0,
+    atom_1, atom_2, atom_single_frame, atom_0_dcd)
 
 
 class TestChainReader(object):
@@ -41,8 +40,7 @@ class TestChainReader(object):
 
     @pytest.fixture()
     def universe(self):
-        return mda.Universe(PSF,
-                            [DCD, CRD, DCD, CRD, DCD, CRD, CRD])
+        return mda.Universe(PSF, [DCD, CRD, DCD, CRD, DCD, CRD, CRD])
 
     def test_next_trajectory(self, universe):
         universe.trajectory.rewind()
@@ -60,14 +58,15 @@ class TestChainReader(object):
     def test_iteration(self, universe):
         for ts in universe.trajectory:
             pass  # just forward to last frame
-        assert_equal(
-            universe.trajectory.n_frames - 1, ts.frame,
-            "iteration yielded wrong number of frames ({0:d}), "
-            "should be {1:d}".format(ts.frame, universe.trajectory.n_frames))
+        assert_equal(universe.trajectory.n_frames - 1, ts.frame,
+                     "iteration yielded wrong number of frames ({0:d}), "
+                     "should be {1:d}".format(ts.frame,
+                                              universe.trajectory.n_frames))
 
     def test_jump_lastframe_trajectory(self, universe):
         universe.trajectory[-1]
-        assert_equal(universe.trajectory.ts.frame + 1, universe.trajectory.n_frames,
+        assert_equal(universe.trajectory.ts.frame + 1,
+                     universe.trajectory.n_frames,
                      "indexing last frame with trajectory[-1]")
 
     def test_slice_trajectory(self, universe):
@@ -89,16 +88,13 @@ class TestChainReader(object):
         # forward to frame where we repeat original dcd again:
         # dcd:0..97 crd:98 dcd:99..196
         universe.trajectory[99]
-        assert_equal(
-            universe.atoms.positions, coord0,
-            "coordinates at frame 1 and 100 should be the same!")
+        assert_equal(universe.atoms.positions, coord0,
+                     "coordinates at frame 1 and 100 should be the same!")
 
     def test_time(self, universe):
         universe.trajectory[30]  # index and frames 0-based
-        assert_almost_equal(universe.trajectory.time,
-                            30.0,
-                            5,
-                            err_msg="Wrong time of frame")
+        assert_almost_equal(
+            universe.trajectory.time, 30.0, 5, err_msg="Wrong time of frame")
 
     def test_write_dcd(self, universe, tmpdir):
         """test that ChainReader written dcd (containing crds) is correct
@@ -109,8 +105,7 @@ class TestChainReader(object):
                 W.write(universe)
         universe.trajectory.rewind()
         u = mda.Universe(PSF, outfile)
-        for (ts_orig, ts_new) in zip(universe.trajectory,
-                                     u.trajectory):
+        for (ts_orig, ts_new) in zip(universe.trajectory, u.trajectory):
             assert_almost_equal(
                 ts_orig._pos,
                 ts_new._pos,
@@ -125,28 +120,27 @@ class TestChainReaderCommonDt(object):
 
     @pytest.fixture()
     def trajectory(self):
-        universe = mda.Universe(PSF,
-                                [DCD, CRD, DCD, CRD, DCD, CRD, CRD],
-                                dt=self.common_dt)
+        universe = mda.Universe(
+            PSF, [DCD, CRD, DCD, CRD, DCD, CRD, CRD], dt=self.common_dt)
         return universe.trajectory
 
     def test_time(self, trajectory):
         # We test this for the beginning, middle and end of the trajectory.
         for frame_n in (0, trajectory.n_frames // 2, -1):
             trajectory[frame_n]
-            assert_almost_equal(trajectory.time,
-                                trajectory.frame * self.common_dt,
-                                5,
-                                err_msg="Wrong time for frame {0:d}".format(
-                                    frame_n))
+            assert_almost_equal(
+                trajectory.time,
+                trajectory.frame * self.common_dt,
+                5,
+                err_msg="Wrong time for frame {0:d}".format(frame_n))
 
 
 class TestChainReaderFormats(object):
     """Test of ChainReader with explicit formats (Issue 76)."""
 
     def test_set_all_format_tuples(self):
-        universe = mda.Universe(GRO, [(PDB, 'pdb'), (XTC, 'xtc'),
-                                      (TRR, 'trr')])
+        universe = mda.Universe(GRO, [(PDB, 'pdb'), (XTC, 'xtc'), (TRR,
+                                                                   'trr')])
         assert universe.trajectory.n_frames == 21
         assert_equal(universe.trajectory.filenames, [PDB, XTC, TRR])
 
@@ -188,10 +182,13 @@ class TestChainReaderContinuous(object):
         with pytest.raises(RuntimeError):
             mda.Universe(top, [trajs[0], trajs[-1]], continuous=True)
 
-    # [0] [0 1 2 3]
-    def test_exclude_frame(self, top):
-        u = mda.Universe(top, [atom_single_frame, atom_0_dcd], continuous=True)
+    # [0] [0 1 2 3], [0] [0] [0 1 2 3], [0] [0] [0] [0 1 2 3]
+    @pytest.mark.parametrize('single_frames',
+                             ([atom_single_frame, ],
+                              [atom_single_frame, ] * 2,
+                              [atom_single_frame, ] * 3))
+    def test_exclude_frame(self, top, single_frames):
+        u = mda.Universe(top,  single_frames + [atom_0_dcd, ], continuous=True)
         assert u.trajectory.n_frames == 4
         for i, ts in enumerate(u.trajectory):
             assert_almost_equal(i, ts.time)
-        assert False
