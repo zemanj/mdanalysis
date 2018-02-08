@@ -61,6 +61,14 @@ with mda.Writer(f'parts_single_frame.{fmt}', 1) as W:
     ts.dt = 1
     W.write(atom)
 
+for i in range(nframes):
+    with mda.Writer(f'parts_sf_{i}.{fmt}', 1) as W:
+        ts = u.trajectory[0]
+        ts.time = i
+        ts.dt = 1
+        W.write(atom)
+
+
 frames = xparts[0]
 i = 0
 fname = f'parts_{i}.{fmt}'
