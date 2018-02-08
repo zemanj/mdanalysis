@@ -335,7 +335,7 @@ class ChainReader(base.ProtoReader):
         """
         values = np.array(self._get(attr))
         value = values[0]
-        if not np.all(values == value):
+        if not np.allclose(values, value):
             bad_traj = np.array(self.filenames)[values != value]
             raise ValueError("The following trajectories do not have the correct {0} "
                              " ({1}):\n{2}".format(attr, value, bad_traj))

@@ -34,6 +34,12 @@ from MDAnalysisTests.datafiles import (
     PDB, PSF, CRD, DCD, GRO, XTC, TRR, PDB_small, PDB_closed, atom_gro, atom_0,
     atom_1, atom_2, atom_single_frame, atom_0_dcd)
 
+from pkg_resources import resource_filename
+single_frames = [
+    resource_filename(__name__, '../data/chainreader/parts_sf_{}.dcd'.format(i))
+    for i in range(10)
+]
+
 
 class TestChainReader(object):
     prec = 3
@@ -183,12 +189,35 @@ class TestChainReaderContinuous(object):
             mda.Universe(top, [trajs[0], trajs[-1]], continuous=True)
 
     # [0] [0 1 2 3], [0] [0] [0 1 2 3], [0] [0] [0] [0 1 2 3]
-    @pytest.mark.parametrize('single_frames',
-                             ([atom_single_frame, ],
-                              [atom_single_frame, ] * 2,
-                              [atom_single_frame, ] * 3))
-    def test_exclude_frame(self, top, single_frames):
-        u = mda.Universe(top,  single_frames + [atom_0_dcd, ], continuous=True)
+    @pytest.mark.parametrize('frame', ([atom_single_frame, ],
+                                       [atom_single_frame, ] * 2,
+                                       [atom_single_frame, ] * 3))
+    def test_exclude_frame(self, top, frame):
+        u = mda.Universe(top, frame + [atom_0_dcd, ], continuous=True)
         assert u.trajectory.n_frames == 4
+        for i, ts in enumerate(u.trajectory):
+            assert_almost_equal(i, ts.time)
+
+
+    # [0 1 2 3] [1]
+    def test_more_excludes(self, top):
+        u = mda.Universe(top,  [single_frames[1], atom_0_dcd], continuous=True)
+        assert u.trajectory.n_frames == 4
+        for i, ts in enumerate(u.trajectory):
+            assert_almost_equal(i, ts.time)
+
+    # [0 1 2 3] [3]
+    def test_last_sinle(self, top):
+        u = mda.Universe(top,  [single_frames[3], atom_0_dcd], continuous=True)
+        assert u.trajectory.n_frames == 4
+        for i, ts in enumerate(u.trajectory):
+            assert_almost_equal(i, ts.time)
+        u.trajectory[3]
+        assert u.trajectory.active_reader == u.trajectory.readers[-1]
+
+    # [0 1 2 3] [2 3 4 5 6] [5 6 7 8 9] [4] [8]
+    def test_length_with_exclude(self, top, trajs):
+        u = mda.Universe(top, trajs + [single_frames[4], single_frames[8]], continuous=True)
+        assert u.trajectory.n_frames == 10
         for i, ts in enumerate(u.trajectory):
             assert_almost_equal(i, ts.time)
