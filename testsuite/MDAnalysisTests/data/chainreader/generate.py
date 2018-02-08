@@ -76,3 +76,8 @@ with mda.Writer(fname, 1) as W:
     for f, ts in zip(frames, u.trajectory[frames]):
         ts.time = f
         W.write(atom)
+
+with mda.Writer('all.dcd', 1) as W:
+    for i, ts in enumerate(u.trajectory[:nframes]):
+        ts.time = i
+        W.write(atom)

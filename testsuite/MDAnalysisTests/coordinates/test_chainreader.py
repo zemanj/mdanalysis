@@ -39,6 +39,7 @@ single_frames = [
     resource_filename(__name__, '../data/chainreader/parts_sf_{}.dcd'.format(i))
     for i in range(10)
 ]
+allframes = resource_filename(__name__, '../data/chainreader/all.dcd')
 
 
 class TestChainReader(object):
@@ -169,6 +170,30 @@ class TestChainReaderContinuous(object):
     def trajs(self):
         return [atom_0, atom_1, atom_2]
 
+    # [0 1 2 3 4 5 6 7 8 9] [0 1 2 4]
+    def test_last_frames(self, top):
+        # TODO check only one trajectory is used
+        u = mda.Universe(top, [allframes, atom_0], continuous=True)
+        assert u.trajectory.n_frames == 10
+        for i, ts in enumerate(u.trajectory):
+            assert_almost_equal(i, ts.time)
+
+    # [0 1 2 3] [2] [3] [2 3 4 5 6] [5 6 7 8 9]
+    def test_middle_frames(self, top):
+        # TODO check only one trajectory is used
+        u = mda.Universe(top, [atom_0, single_frames[2], single_frames[3], atom_1, atom_2], continuous=True)
+        assert u.trajectory.n_frames == 10
+        for i, ts in enumerate(u.trajectory):
+            assert_almost_equal(i, ts.time)
+
+    # [0 1 2 3] [3] [2] [2 3 4 5 6] [5 6 7 8 9]
+    def test_middle_frames_order(self, top):
+        # TODO check only one trajectory is used
+        u = mda.Universe(top, [atom_0, single_frames[3], single_frames[2], atom_1, atom_2], continuous=True)
+        assert u.trajectory.n_frames == 10
+        for i, ts in enumerate(u.trajectory):
+            assert_almost_equal(i, ts.time)
+
     # [0 1 2 3] [2 3 4 5 6] [5 6 7 8 9]
     def test_length(self, top, trajs):
         u = mda.Universe(top, trajs, continuous=True)
@@ -187,6 +212,11 @@ class TestChainReaderContinuous(object):
     def test_missing_frame(self, top, trajs):
         with pytest.raises(RuntimeError):
             mda.Universe(top, [trajs[0], trajs[-1]], continuous=True)
+
+    # [0 1 2 3] [4] [5 6 7 8 9]
+    def test_single_frame_needed(self, top, trajs):
+        mda.Universe(top, [trajs[0], single_frames[4], trajs[-1]], continuous=True)
+        assert u.trajectory.n_frames == 10
 
     # [0] [0 1 2 3], [0] [0] [0 1 2 3], [0] [0] [0] [0 1 2 3]
     @pytest.mark.parametrize('frame', ([atom_single_frame, ],
@@ -221,3 +251,9 @@ class TestChainReaderContinuous(object):
         assert u.trajectory.n_frames == 10
         for i, ts in enumerate(u.trajectory):
             assert_almost_equal(i, ts.time)
+
+    # repeated [0 1 2 3]
+    @pytest.mark.parametrize('number', [1, 2, 3])
+    def test_length_same_same(self, top, number):
+        u = mda.Universe(top, [atom_0, ] * number, continuous=True)
+        assert u.trajectory.n_frames == 4
