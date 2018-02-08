@@ -178,6 +178,14 @@ class TestChainReaderContinuous(object):
         for i, ts in enumerate(u.trajectory):
             assert_almost_equal(i, ts.time)
 
+    # [0 1 2 4] [0 1 2 3 4 5 6 7 8 9]
+    def test_last_traj_complete(self, top):
+        # TODO check only one trajectory is used
+        u = mda.Universe(top, [allframes, atom_0], continuous=True)
+        assert u.trajectory.n_frames == 10
+        for i, ts in enumerate(u.trajectory):
+            assert_almost_equal(i, ts.time)
+
     # [0 1 2 3] [2] [3] [2 3 4 5 6] [5 6 7 8 9]
     def test_middle_frames(self, top):
         # TODO check only one trajectory is used
