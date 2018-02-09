@@ -81,3 +81,13 @@ with mda.Writer('all.dcd', 1) as W:
     for i, ts in enumerate(u.trajectory[:nframes]):
         ts.time = i
         W.write(atom)
+
+with mda.Writer('parts-34.dcd', 1) as W:
+    for i, ts in enumerate(u.trajectory[3:4]):
+        ts.time = i
+        W.write(atom)
+
+with mda.Writer('parts-4567.dcd', 1) as W:
+    for i, ts in enumerate(u.trajectory[4:7]):
+        ts.time = i
+        W.write(atom)

@@ -40,6 +40,8 @@ single_frames = [
     for i in range(10)
 ]
 allframes = resource_filename(__name__, '../data/chainreader/all.dcd')
+frames34 = resource_filename(__name__, '../data/chainreader/parts_34.dcd')
+frames4567 = resource_filename(__name__, '../data/chainreader/parts_4567.dcd')
 
 
 class TestChainReader(object):
@@ -176,15 +178,15 @@ class TestChainReaderContinuous(object):
         u = mda.Universe(top, [allframes, atom_0], continuous=True)
         assert u.trajectory.n_frames == 10
         for i, ts in enumerate(u.trajectory):
-            assert_almost_equal(i, ts.time)
+            assert_almost_equal(i, ts.time, decimal=4)
 
     # [0 1 2 4] [0 1 2 3 4 5 6 7 8 9]
     def test_last_traj_complete(self, top):
         # TODO check only one trajectory is used
-        u = mda.Universe(top, [allframes, atom_0], continuous=True)
+        u = mda.Universe(top, [atom_0, allframes], continuous=True)
         assert u.trajectory.n_frames == 10
         for i, ts in enumerate(u.trajectory):
-            assert_almost_equal(i, ts.time)
+            assert_almost_equal(i, ts.time, decimal=4)
 
     # [0 1 2 3] [2] [3] [2 3 4 5 6] [5 6 7 8 9]
     def test_middle_frames(self, top):
@@ -265,3 +267,34 @@ class TestChainReaderContinuous(object):
     def test_length_same_same(self, top, number):
         u = mda.Universe(top, [atom_0, ] * number, continuous=True)
         assert u.trajectory.n_frames == 4
+
+    # make reader out of single frames
+    @pytest.mark.parametrize('frames', (slice(None, None, None),
+                                        slice(None, None, -1),
+                                        [3,4,2,5,1,0,8,6,9,7]))
+    def test_single_frames(self, top, frames):
+        u = mda.Universe(top, np.array(single_frames)[frames].tolist(), continuous=True)
+        assert u.trajectory.n_frames == 10
+        for i, ts in enumerate(u.trajectory):
+            assert_almost_equal(i, ts.time)
+
+    # [0 1 2 3] [3 4] [4 5 6 7]
+    def test_1(self, top):
+        u = mda.Universe(top, [atom_0, frames34, frames4567], continuous=True)
+        assert u.trajectory.n_frames == 8
+        for i, ts in enumerate(u.trajectory):
+            assert_almost_equal(i, ts.time)
+
+    # [0 1 2 3] [3] [4 5 6 7]
+    def test_2(self, top):
+        u = mda.Universe(top, [atom_0, single_frames[3], frames4567], continuous=True)
+        assert u.trajectory.n_frames == 8
+        for i, ts in enumerate(u.trajectory):
+            assert_almost_equal(i, ts.time)
+
+    # [0 1 2 3] [3] [3 4] [4 5 6 7]
+    def test_3(self, top):
+        u = mda.Universe(top, [atom_0, single_frames[3], frames34, frames4567], continuous=True)
+        assert u.trajectory.n_frames == 8
+        for i, ts in enumerate(u.trajectory):
+            assert_almost_equal(i, ts.time)
