@@ -306,7 +306,7 @@ class TestChainReaderContinuous(object):
 
 @pytest.mark.parametrize('l', ([(0, 3), (3, 3), (4, 7)],
                                [(0, 9), (0, 4)],
-                               ))
+                               [(0, 3), (2, 2), (3, 3), (2, 6), (5, 9)]))
 def test_multilevel_arg_sort(l):
     indices = mda.coordinates.chain.multi_level_argsort(l)
     sl = np.array(l)[indices]
