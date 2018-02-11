@@ -49,7 +49,7 @@ atom.write('atom.gro')
 def generate(fmt):
     for i, frames in enumerate(xparts):
         fname = f'parts_{i}.{fmt}'
-        with mda.Writer(fname, 1) as W:
+        with mda.Writer(fname, 1, istart=frames[0]) as W:
             for f, ts in zip(frames, u.trajectory[frames]):
                 ts.time = f
                 W.write(atom)
@@ -61,7 +61,7 @@ def generate(fmt):
         W.write(atom)
 
     for i in range(nframes):
-        with mda.Writer(f'parts_sf_{i}.{fmt}', 1) as W:
+        with mda.Writer(f'parts_sf_{i}.{fmt}', 1, istart=i) as W:
             ts = u.trajectory[0]
             ts.time = i
             ts.dt = 1
@@ -70,7 +70,7 @@ def generate(fmt):
     frames = xparts[0]
     i = 0
     fname = f'parts_{i}.{fmt}'
-    with mda.Writer(fname, 1) as W:
+    with mda.Writer(fname, 1, istart=frames[0]) as W:
         for f, ts in zip(frames, u.trajectory[frames]):
             ts.time = f
             W.write(atom)
@@ -80,12 +80,12 @@ def generate(fmt):
             ts.time = i
             W.write(atom)
 
-    with mda.Writer(f'parts-34.{fmt}', 1) as W:
+    with mda.Writer(f'parts-34.{fmt}', 1, istart=3) as W:
         for i, ts in enumerate(u.trajectory[3:4]):
             ts.time = i
             W.write(atom)
 
-    with mda.Writer(f'parts-4567.{fmt}', 1) as W:
+    with mda.Writer(f'parts-4567.{fmt}', 1, istart=4) as W:
         for i, ts in enumerate(u.trajectory[4:7]):
             ts.time = i
             W.write(atom)
