@@ -41,53 +41,55 @@ for prev, part, nxt in zip(parts[:-2], parts[1:-1], parts[2:]):
 print("Will use frames: ", xparts)
 
 
+
 # XTC
 atom = u.atoms[:1]
 atom.write('atom.gro')
 
-fmt = 'xtc'
-for i, frames in enumerate(xparts):
+def generate(fmt):
+    for i, frames in enumerate(xparts):
+        fname = f'parts_{i}.{fmt}'
+        with mda.Writer(fname, 1) as W:
+            for f, ts in zip(frames, u.trajectory[frames]):
+                ts.time = f
+                W.write(atom)
+
+    with mda.Writer(f'parts_single_frame.{fmt}', 1) as W:
+        ts = u.trajectory[0]
+        ts.time = 0
+        ts.dt = 1
+        W.write(atom)
+
+    for i in range(nframes):
+        with mda.Writer(f'parts_sf_{i}.{fmt}', 1) as W:
+            ts = u.trajectory[0]
+            ts.time = i
+            ts.dt = 1
+            W.write(atom)
+
+    frames = xparts[0]
+    i = 0
     fname = f'parts_{i}.{fmt}'
     with mda.Writer(fname, 1) as W:
         for f, ts in zip(frames, u.trajectory[frames]):
             ts.time = f
             W.write(atom)
 
-# DCD
-fmt = 'dcd'
-with mda.Writer(f'parts_single_frame.{fmt}', 1) as W:
-    ts = u.trajectory[0]
-    ts.time = 0
-    ts.dt = 1
-    W.write(atom)
+    with mda.Writer(f'all.{fmt}', 1) as W:
+        for i, ts in enumerate(u.trajectory[:nframes]):
+            ts.time = i
+            W.write(atom)
 
-for i in range(nframes):
-    with mda.Writer(f'parts_sf_{i}.{fmt}', 1) as W:
-        ts = u.trajectory[0]
-        ts.time = i
-        ts.dt = 1
-        W.write(atom)
+    with mda.Writer(f'parts-34.{fmt}', 1) as W:
+        for i, ts in enumerate(u.trajectory[3:4]):
+            ts.time = i
+            W.write(atom)
+
+    with mda.Writer(f'parts-4567.{fmt}', 1) as W:
+        for i, ts in enumerate(u.trajectory[4:7]):
+            ts.time = i
+            W.write(atom)
 
 
-frames = xparts[0]
-i = 0
-fname = f'parts_{i}.{fmt}'
-with mda.Writer(fname, 1) as W:
-    for f, ts in zip(frames, u.trajectory[frames]):
-        ts.time = f
-        W.write(atom)
-
-with mda.Writer('all.dcd', 1) as W:
-    for i, ts in enumerate(u.trajectory[:nframes]):
-        ts.time = i
-        W.write(atom)
-
-with mda.Writer('parts-34.dcd', 1) as W:
-    for i, ts in enumerate(u.trajectory[3:4]):
-        ts.time = i
-        W.write(atom)
-
-with mda.Writer('parts-4567.dcd', 1) as W:
-    for i, ts in enumerate(u.trajectory[4:7]):
-        ts.time = i
-        W.write(atom)
+generate('xtc')
+generate('dcd')
