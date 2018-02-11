@@ -410,9 +410,9 @@ GSD = resource_filename(__name__, 'data/example.gsd')
 
 # two atoms system taken from TPR to test chain readers
 atom_gro = resource_filename(__name__, 'data/chainreader/atom.gro')
-atom_0 = resource_filename(__name__, 'data/chainreader/parts_0.xtc')
-atom_1 = resource_filename(__name__, 'data/chainreader/parts_1.xtc')
-atom_2 = resource_filename(__name__, 'data/chainreader/parts_2.xtc')
+atom_0 = resource_filename(__name__, 'data/chainreader/parts_0.dcd')
+atom_1 = resource_filename(__name__, 'data/chainreader/parts_1.dcd')
+atom_2 = resource_filename(__name__, 'data/chainreader/parts_2.dcd')
 atom_single_frame = resource_filename(__name__, 'data/chainreader/parts_single_frame.dcd')
 atom_0_dcd = resource_filename(__name__, 'data/chainreader/parts_0.dcd')
 

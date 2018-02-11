@@ -44,6 +44,7 @@ frames34 = resource_filename(__name__, '../data/chainreader/parts_34.dcd')
 frames4567 = resource_filename(__name__, '../data/chainreader/parts_4567.dcd')
 
 
+
 class TestChainReader(object):
     prec = 3
 
@@ -162,6 +163,8 @@ class TestChainReaderFormats(object):
         assert universe.trajectory.n_frames == 2
 
 
+# single frame doesn't work with xtc! NEED TO ACCOUND FOR THAT IN TESTING
+
 class TestChainReaderContinuous(object):
     # description of the frame patterns to test are in comments as lists
     @pytest.fixture
@@ -225,7 +228,8 @@ class TestChainReaderContinuous(object):
 
     # [0 1 2 3] [4] [5 6 7 8 9]
     def test_single_frame_needed(self, top, trajs):
-        mda.Universe(top, [trajs[0], single_frames[4], trajs[-1]], continuous=True)
+        u = mda.Universe(top, [trajs[0], single_frames[4], trajs[-1]],
+                         continuous=True)
         assert u.trajectory.n_frames == 10
 
     # [0] [0 1 2 3], [0] [0] [0 1 2 3], [0] [0] [0] [0 1 2 3]
