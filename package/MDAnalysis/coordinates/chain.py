@@ -55,6 +55,19 @@ from . import base
 from . import core
 
 
+def multi_level_argsort(l):
+    """
+    Parameters
+    ----------
+    l : list
+
+    Returns
+    -------
+    indices
+    """
+    return [el[0] for el in sorted(enumerate(l), key=lambda x: x[1])]
+
+
 class ChainReader(base.ProtoReader):
     """Reader that concatenates multiple trajectories on the fly.
 
@@ -171,10 +184,14 @@ class ChainReader(base.ProtoReader):
             # to
             # [0 1 2 4] [0 1 2 3 4 5 6 7 8 9]
             # after that sort the chain reader will work as expected
-
-            # first round of sorting
-            times = [r.ts.time for r in self.readers]
-            sort_idx = np.argsort(times)
+            times = []
+            for r in self.readers:
+                r[0]
+                start = r.ts.time
+                r[-1]
+                end = r.ts.time
+                times.append((start, end))
+            sort_idx = multi_level_argsort(times)
             self.readers = [self.readers[i] for i in sort_idx]
             self.filenames = self.filenames[sort_idx]
             self.total_times = self.dts * n_frames[sort_idx]
