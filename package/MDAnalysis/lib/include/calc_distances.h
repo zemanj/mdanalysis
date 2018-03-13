@@ -50,7 +50,7 @@ static void minimum_image_triclinic(double *dx, coordinate* box)
   // by moving all particles to inside the box before calculating separations)
   // Requires a box
   // Assumes box having zero values for box[0][1], box[0][2] and box [1][2]
-  double dmin[3], rx[3], ry[3], rz[3];
+  double dmin[3] = {FLT_MAX}, rx[3], ry[3], rz[3];
   double min = FLT_MAX, d;
   int i, x, y, z;
 
@@ -81,10 +81,13 @@ static void minimum_image_triclinic(double *dx, coordinate* box)
   }
 }
 
-static void _ortho_pbc(coordinate* coords, int numcoords, float* box, float* box_inverse)
+static void _ortho_pbc(coordinate* coords, int numcoords, float* box)
 {
   int i, s[3];
-  // Moves all coordinates to within the box boundaries for a orthogonal box
+  float box_inverse[3];
+  box_inverse[0] = 1.0 / box[0];
+  box_inverse[1] = 1.0 / box[1];
+  box_inverse[2] = 1.0 / box[2];
 #ifdef PARALLEL
 #pragma omp parallel for private(i, s) shared(coords)
 #endif
@@ -98,16 +101,16 @@ static void _ortho_pbc(coordinate* coords, int numcoords, float* box, float* box
   }
 }
 
-static void _triclinic_pbc(coordinate* coords, int numcoords, coordinate* box, float* box_inverse)
+static void _triclinic_pbc(coordinate* coords, int numcoords, coordinate* box)
 {
   int i, s;
   // Inverse of matrix box (here called "m")
   //   [           1/m00                 ,        0      ,   0  ]
   //   [        -m10/(m00*m11)           ,      1/m11    ,   0  ]
   //   [(m10*m21/(m00*m11) - m20/m00)/m22, -m21/(m11*m22), 1/m22]
-  float bi00 = box_inverse[0];
-  float bi11 = box_inverse[1];
-  float bi22 = box_inverse[2];
+  float bi00 = 1.0 / box[0][0];
+  float bi11 = 1.0 / box[1][1];
+  float bi22 = 1.0 / box[2][2];
   float bi01 = -box[1][0]*bi00*bi11;
   float bi02 = (box[1][0]*box[2][1]*bi11 - box[2][0])*bi00*bi22;
   float bi12 = -box[2][1]*bi11*bi22;
@@ -186,15 +189,11 @@ static void _calc_distance_array_triclinic(coordinate* ref, int numref,
 {
   int i, j;
   double dx[3];
-  float box_inverse[3];
   double rsq;
 
-  box_inverse[0] = 1.0 / box[0][0];
-  box_inverse[1] = 1.0 / box[1][1];
-  box_inverse[2] = 1.0 / box[2][2];
   // Move coords to inside box
-  _triclinic_pbc(ref, numref, box, box_inverse);
-  _triclinic_pbc(conf, numconf, box, box_inverse);
+  _triclinic_pbc(ref, numref, box);
+  _triclinic_pbc(conf, numconf, box);
 
 #ifdef PARALLEL
 #pragma omp parallel for private(i, j, dx, rsq) shared(distances)
@@ -211,8 +210,8 @@ static void _calc_distance_array_triclinic(coordinate* ref, int numref,
   }
 }
 
-static void _calc_self_distance_array(coordinate* ref, int numref, double* distances,
-                                      int distnum)
+static void _calc_self_distance_array(coordinate* ref, int numref,
+                                      double* distances)
 {
   int i, j, distpos;
   double dx[3];
@@ -238,8 +237,8 @@ static void _calc_self_distance_array(coordinate* ref, int numref, double* dista
   }
 }
 
-static void _calc_self_distance_array_ortho(coordinate* ref, int numref, float* box,
-                                            double* distances, int distnum)
+static void _calc_self_distance_array_ortho(coordinate* ref, int numref,
+                                            float* box, double* distances)
 {
   int i, j, distpos;
   double dx[3];
@@ -272,19 +271,14 @@ static void _calc_self_distance_array_ortho(coordinate* ref, int numref, float* 
 }
 
 static void _calc_self_distance_array_triclinic(coordinate* ref, int numref,
-                                                coordinate* box, double *distances,
-                                                int distnum)
+                                                coordinate* box,
+                                                double *distances)
 {
   int i, j, distpos;
   double dx[3];
   double rsq;
-  float box_inverse[3];
 
-  box_inverse[0] = 1.0 / box[0][0];
-  box_inverse[1] = 1.0 / box[1][1];
-  box_inverse[2] = 1.0 / box[2][2];
-
-  _triclinic_pbc(ref, numref, box, box_inverse);
+  _triclinic_pbc(ref, numref, box);
 
   distpos = 0;
 
@@ -382,15 +376,10 @@ static void _calc_bond_distance_triclinic(coordinate* atom1, coordinate* atom2,
 {
   int i;
   double dx[3];
-  float box_inverse[3];
   double rsq;
 
-  box_inverse[0] = 1.0/box[0][0];
-  box_inverse[1] = 1.0/box[1][1];
-  box_inverse[2] = 1.0/box[2][2];
-
-  _triclinic_pbc(atom1, numatom, box, box_inverse);
-  _triclinic_pbc(atom2, numatom, box, box_inverse);
+  _triclinic_pbc(atom1, numatom, box);
+  _triclinic_pbc(atom2, numatom, box);
 
 #ifdef PARALLEL
 #pragma omp parallel for private(i, dx, rsq) shared(distances)
@@ -488,15 +477,10 @@ static void _calc_angle_triclinic(coordinate* atom1, coordinate* atom2,
   int i;
   double rji[3], rjk[3];
   double x, y, xp[3];
-  float box_inverse[3];
 
-  box_inverse[0] = 1.0/box[0][0];
-  box_inverse[1] = 1.0/box[1][1];
-  box_inverse[2] = 1.0/box[2][2];
-
-  _triclinic_pbc(atom1, numatom, box, box_inverse);
-  _triclinic_pbc(atom2, numatom, box, box_inverse);
-  _triclinic_pbc(atom3, numatom, box, box_inverse);
+  _triclinic_pbc(atom1, numatom, box);
+  _triclinic_pbc(atom2, numatom, box);
+  _triclinic_pbc(atom3, numatom, box);
 
 #ifdef PARALLEL
 #pragma omp parallel for private(i, rji, rjk, x, xp, y) shared(angles)
@@ -632,16 +616,11 @@ static void _calc_dihedral_triclinic(coordinate* atom1, coordinate* atom2,
 {
   int i;
   double va[3], vb[3], vc[3];
-  float box_inverse[3];
 
-  box_inverse[0] = 1.0/box[0][0];
-  box_inverse[1] = 1.0/box[1][1];
-  box_inverse[2] = 1.0/box[2][2];
-
-  _triclinic_pbc(atom1, numatom, box, box_inverse);
-  _triclinic_pbc(atom2, numatom, box, box_inverse);
-  _triclinic_pbc(atom3, numatom, box, box_inverse);
-  _triclinic_pbc(atom4, numatom, box, box_inverse);
+  _triclinic_pbc(atom1, numatom, box);
+  _triclinic_pbc(atom2, numatom, box);
+  _triclinic_pbc(atom3, numatom, box);
+  _triclinic_pbc(atom4, numatom, box);
 
 #ifdef PARALLEL
 #pragma omp parallel for private(i, va, vb, vc) shared(angles)
