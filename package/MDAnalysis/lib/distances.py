@@ -833,20 +833,9 @@ def apply_PBC(incoords, box, backend="serial"):
     if boxtype == 'tri_vecs_bad':
         box = triclinic_vectors(triclinic_box(box[0], box[1], box[2]))
 
-    box_inv = np.zeros((3), dtype=np.float32)
     if boxtype == 'ortho':
-        box_inv[0] = 1.0 / box[0]
-        box_inv[1] = 1.0 / box[1]
-        box_inv[2] = 1.0 / box[2]
-        _run("ortho_pbc",
-               args=(coords, box, box_inv),
-               backend=backend)
+        _run("ortho_pbc", args=(coords, box), backend=backend)
     else:
-        box_inv[0] = 1.0 / box[0][0]
-        box_inv[1] = 1.0 / box[1][1]
-        box_inv[2] = 1.0 / box[2][2]
-        _run("triclinic_pbc",
-               args=(coords, box, box_inv),
-               backend=backend)
+        _run("triclinic_pbc", args=(coords, box), backend=backend)
 
     return coords
