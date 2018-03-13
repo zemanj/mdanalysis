@@ -24,6 +24,12 @@
 #include <float.h>
 typedef float coordinate[3];
 
+enum ePBC {
+    ePBCortho,
+    ePBCtriclinic,
+    ePBCnone
+};
+
 #ifdef PARALLEL
   #include <omp.h>
   #define USED_OPENMP 1
@@ -31,19 +37,38 @@ typedef float coordinate[3];
   #define USED_OPENMP 0
 #endif
 
-static void _minimum_image_ortho(double *x, float *box, float *inverse_box)
+static void _minimum_image_ortho(double *dx, float *box, float *inverse_box)
 {
-  int i;
-  double s;
-  for (i=0; i<3; i++) {
-    if (box[i] > FLT_EPSILON) {
-      s = inverse_box[i] * x[i];
-      x[i] = box[i] * (s - round(s));
+    // Minimum image convention for orthogonal boxes.
+    double s;
+    for (int i = 0; i < 3; i++) {
+        if (box[i] > FLT_EPSILON) {
+            s = inverse_box[i] * dx[i];
+            dx[i] = box[i] * (s - round(s));
+        }
     }
-  }
 }
 
-static void _minimum_image_triclinic(double *dx, float* box_vectors)
+static void _minimum_image_ortho_lazy(double* dx, float* box, float* half_box)
+{
+    // Minimum image convention for orthogonal boxes.
+    // Assumes that the maximum separation is less than 1.5 times the box length
+    // (enforced in distance_array functions by packing all particles into the
+    // box before calculating separations). For O(n) algorithms it is faster
+    // to use _minimum_image_ortho() without prior packing!
+    for (int i = 0; i < 3; i++) {
+        if (box[i] > FLT_EPSILON) {
+            if (dx[i] > half_box[i]) {
+                dx[i] -= box[i];
+            }
+            else if (dx[i] <= -half_box[i]) {
+                dx[i] += box[i];
+            }
+        }
+    }
+}
+
+static void _minimum_image_triclinic_lazy(double *dx, float* box_vectors)
 {
     // Minimum image convention for triclinic boxes, modelled after domain.cpp
     // in LAMMPS. Assumes that there is a maximum separation of 1 box length
@@ -164,12 +189,16 @@ static void _calc_distance_array_ortho(coordinate* ref, int numref, coordinate* 
 {
   int i, j;
   double dx[3];
-  float inverse_box[3];
+  float half_box[3];
   double rsq;
 
-  inverse_box[0] = 1.0 / box[0];
-  inverse_box[1] = 1.0 / box[1];
-  inverse_box[2] = 1.0 / box[2];
+  half_box[0] = 0.5 * box[0];
+  half_box[1] = 0.5 * box[1];
+  half_box[2] = 0.5 * box[2];
+
+  _ortho_pbc(ref, numref, box);
+  _ortho_pbc(conf, numconf, box);
+
 #ifdef PARALLEL
 #pragma omp parallel for private(i, j, dx, rsq) shared(distances)
 #endif
@@ -179,7 +208,7 @@ static void _calc_distance_array_ortho(coordinate* ref, int numref, coordinate* 
       dx[1] = conf[j][1] - ref[i][1];
       dx[2] = conf[j][2] - ref[i][2];
       // Periodic boundaries
-      _minimum_image_ortho(dx, box, inverse_box);
+      _minimum_image_ortho_lazy(dx, box, half_box);
       rsq = (dx[0]*dx[0]) + (dx[1]*dx[1]) + (dx[2]*dx[2]);
       *(distances+i*numconf+j) = sqrt(rsq);
     }
@@ -207,7 +236,7 @@ static void _calc_distance_array_triclinic(coordinate* ref, int numref,
       dx[0] = conf[j][0] - ref[i][0];
       dx[1] = conf[j][1] - ref[i][1];
       dx[2] = conf[j][2] - ref[i][2];
-      _minimum_image_triclinic(dx, box_vectors);
+      _minimum_image_triclinic_lazy(dx, box_vectors);
       rsq = (dx[0]*dx[0] + dx[1]*dx[1] + dx[2]*dx[2]);
       *(distances + i*numconf + j) = sqrt(rsq);
     }
@@ -246,13 +275,15 @@ static void _calc_self_distance_array_ortho(coordinate* ref, int numref,
 {
   int i, j, distpos;
   double dx[3];
-  float inverse_box[3];
+  float half_box[3];
   double rsq;
 
-  inverse_box[0] = 1.0 / box[0];
-  inverse_box[1] = 1.0 / box[1];
-  inverse_box[2] = 1.0 / box[2];
+  half_box[0] = 0.5 * box[0];
+  half_box[1] = 0.5 * box[1];
+  half_box[2] = 0.5 * box[2];
   distpos = 0;
+
+  _ortho_pbc(ref, numref, box);
 
 #ifdef PARALLEL
 #pragma omp parallel for private(i, distpos, j, dx, rsq) shared(distances)
@@ -266,7 +297,7 @@ static void _calc_self_distance_array_ortho(coordinate* ref, int numref,
       dx[1] = ref[j][1] - ref[i][1];
       dx[2] = ref[j][2] - ref[i][2];
       // Periodic boundaries
-      _minimum_image_ortho(dx, box, inverse_box);
+      _minimum_image_ortho_lazy(dx, box, half_box);
       rsq = (dx[0]*dx[0]) + (dx[1]*dx[1]) + (dx[2]*dx[2]);
       *(distances+distpos) = sqrt(rsq);
       distpos += 1;
@@ -297,7 +328,7 @@ static void _calc_self_distance_array_triclinic(coordinate* ref, int numref,
       dx[0] = ref[j][0] - ref[i][0];
       dx[1] = ref[j][1] - ref[i][1];
       dx[2] = ref[j][2] - ref[i][2];
-      _minimum_image_triclinic(dx, box_vectors);
+      _minimum_image_triclinic_lazy(dx, box_vectors);
       rsq = (dx[0]*dx[0] + dx[1]*dx[1] + dx[2]*dx[2]);
       *(distances + distpos) = sqrt(rsq);
       distpos += 1;
@@ -393,7 +424,7 @@ static void _calc_bond_distance_triclinic(coordinate* atom1, coordinate* atom2,
     dx[1] = atom1[i][1] - atom2[i][1];
     dx[2] = atom1[i][2] - atom2[i][2];
     // PBC time!
-    _minimum_image_triclinic(dx, box_vectors);
+    _minimum_image_triclinic_lazy(dx, box_vectors);
     rsq = (dx[0]*dx[0])+(dx[1]*dx[1])+(dx[2]*dx[2]);
     *(distances+i) = sqrt(rsq);
   }
@@ -493,12 +524,12 @@ static void _calc_angle_triclinic(coordinate* atom1, coordinate* atom2,
     rji[0] = atom1[i][0] - atom2[i][0];
     rji[1] = atom1[i][1] - atom2[i][1];
     rji[2] = atom1[i][2] - atom2[i][2];
-    _minimum_image_triclinic(rji, box_vectors);
+    _minimum_image_triclinic_lazy(rji, box_vectors);
 
     rjk[0] = atom3[i][0] - atom2[i][0];
     rjk[1] = atom3[i][1] - atom2[i][1];
     rjk[2] = atom3[i][2] - atom2[i][2];
-    _minimum_image_triclinic(rjk, box_vectors);
+    _minimum_image_triclinic_lazy(rjk, box_vectors);
 
     x = rji[0]*rjk[0] + rji[1]*rjk[1] + rji[2]*rjk[2];
 
@@ -635,17 +666,17 @@ static void _calc_dihedral_triclinic(coordinate* atom1, coordinate* atom2,
     va[0] = atom2[i][0] - atom1[i][0];
     va[1] = atom2[i][1] - atom1[i][1];
     va[2] = atom2[i][2] - atom1[i][2];
-    _minimum_image_triclinic(va, box_vectors);
+    _minimum_image_triclinic_lazy(va, box_vectors);
 
     vb[0] = atom3[i][0] - atom2[i][0];
     vb[1] = atom3[i][1] - atom2[i][1];
     vb[2] = atom3[i][2] - atom2[i][2];
-    _minimum_image_triclinic(vb, box_vectors);
+    _minimum_image_triclinic_lazy(vb, box_vectors);
 
     vc[0] = atom4[i][0] - atom3[i][0];
     vc[1] = atom4[i][1] - atom3[i][1];
     vc[2] = atom4[i][2] - atom3[i][2];
-    _minimum_image_triclinic(vc, box_vectors);
+    _minimum_image_triclinic_lazy(vc, box_vectors);
 
     _calc_dihedral_angle(va, vb, vc, angles + i);
   }
