@@ -222,6 +222,10 @@ class TestGeometryFunctions(object):
         bc = ab + self.e2
         cd = bc + self.e3
         assert_almost_equal(mdamath.dihedral(ab, bc, cd), -np.pi / 2)
+    
+    def test_triclinic_vectors_c_contiguous(self):
+        tri_box = np.array([1., 1., 1., 80., 80., 80.], dtype=np.float32)
+        assert mdamath.triclinic_vectors(tri_box).flags['C_CONTIGUOUS']
 
 
 class TestMakeWhole(object):
