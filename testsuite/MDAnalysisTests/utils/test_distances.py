@@ -749,8 +749,9 @@ class TestDistanceBackendSelection(object):
         positions, result = backend_selection_pos
         try:
             MDAnalysis.lib.distances._run("calc_self_distance_array",
-                                          args=(positions, result),
-                                          backend=backend)
+                                          args=(positions, None,
+                                          MDAnalysis.lib.distances.PBCtype.none,
+                                          result), backend=backend)
         except RuntimeError:
             pytest.fail("Failed to understand backend {0}".format(backend))
 
@@ -758,7 +759,9 @@ class TestDistanceBackendSelection(object):
         positions, result = backend_selection_pos
         with pytest.raises(ValueError):
             MDAnalysis.lib.distances._run("calc_self_distance_array",
-                                          args=(positions, result),
+                                          args=(positions, None,
+                                          MDAnalysis.lib.distances.PBCtype.none,
+                                          result),
                                           backend="not implemented stuff")
 
 def test_used_openmpflag():
