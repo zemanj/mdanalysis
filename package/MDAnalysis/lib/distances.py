@@ -100,22 +100,13 @@ def _run(funcname, args=None, kwargs=None, backend="serial"):
 
 # serial versions are always available (and are typically used within
 # the core and topology modules)
-from .c_distances import (calc_distance_array,
-                          calc_distance_array_ortho,
-                          calc_distance_array_triclinic,
+from .c_distances import (PBCtype,
+                          calc_distance_array,
                           calc_self_distance_array,
-                          calc_self_distance_array_ortho,
-                          calc_self_distance_array_triclinic,
                           coord_transform,
                           calc_bond_distance,
-                          calc_bond_distance_ortho,
-                          calc_bond_distance_triclinic,
                           calc_angle,
-                          calc_angle_ortho,
-                          calc_angle_triclinic,
                           calc_dihedral,
-                          calc_dihedral_ortho,
-                          calc_dihedral_triclinic,
                           ortho_pbc,
                           triclinic_pbc)
 
@@ -284,19 +275,15 @@ def distance_array(reference, configuration, box=None, result=None, backend="ser
     else:
         distances = np.zeros((refnum, confnum), np.float64)
 
+    pbc_type = PBCtype.none
     if box is not None:
         if boxtype == 'ortho':
-            _run("calc_distance_array_ortho",
-                   args=(ref, conf, box, distances),
-                   backend=backend)
+            pbc_type = PBCtype.ortho
         else:
-            _run("calc_distance_array_triclinic",
-                   args=(ref, conf, box, distances),
-                   backend=backend)
-    else:
-        _run("calc_distance_array",
-               args=(ref, conf, distances),
-               backend=backend)
+            pbc_type = PBCtype.triclinic
+
+    _run("calc_distance_array", args=(ref, conf, box, pbc_type, distances),
+         backend=backend)
 
     return distances
 
@@ -373,19 +360,15 @@ def self_distance_array(reference, box=None, result=None, backend="serial"):
     else:
         distances = np.zeros((distnum,), np.float64)
 
+    pbc_type = PBCtype.none
     if box is not None:
         if boxtype == 'ortho':
-            _run("calc_self_distance_array_ortho",
-                   args=(ref, box, distances),
-                   backend=backend)
+            pbc_type = PBCtype.ortho
         else:
-            _run("calc_self_distance_array_triclinic",
-                   args=(ref, box, distances),
-                   backend=backend)
-    else:
-        _run("calc_self_distance_array",
-               args=(ref, distances),
-               backend=backend)
+            pbc_type = PBCtype.triclinic
+
+    _run("calc_self_distance_array", args=(ref, box, pbc_type, distances),
+         backend=backend)
 
     return distances
 
@@ -576,19 +559,15 @@ def calc_bonds(coords1, coords2, box=None, result=None, backend="serial"):
     else:
         distances = np.zeros((numatom,), np.float64)
 
+    pbc_type = PBCtype.none
     if box is not None:
         if boxtype == 'ortho':
-            _run("calc_bond_distance_ortho",
-                   args=(atom1, atom2, box, distances),
-                   backend=backend)
+            pbc_type = PBCtype.ortho
         else:
-            _run("calc_bond_distance_triclinic",
-                   args=(atom1, atom2, box, distances),
-                   backend=backend)
-    else:
-        _run("calc_bond_distance",
-               args=(atom1, atom2, distances),
-               backend=backend)
+            pbc_type = PBCtype.triclinic
+
+    _run("calc_bond_distance", args=(atom1, atom2, box, pbc_type, distances),
+         backend=backend)
 
     return distances
 
@@ -666,19 +645,15 @@ def calc_angles(coords1, coords2, coords3, box=None, result=None, backend="seria
     else:
         angles = np.zeros((numatom,), np.float64)
 
+    pbc_type = PBCtype.none
     if box is not None:
         if boxtype == 'ortho':
-            _run("calc_angle_ortho",
-                   args=(atom1, atom2, atom3, box, angles),
-                   backend=backend)
+            pbc_type = PBCtype.ortho
         else:
-            _run("calc_angle_triclinic",
-                   args=(atom1, atom2, atom3, box, angles),
-                   backend=backend)
-    else:
-        _run("calc_angle",
-               args=(atom1, atom2, atom3, angles),
-               backend=backend)
+            pbc_type = PBCtype.triclinic
+
+    _run("calc_angle", args=(atom1, atom2, atom3, box, pbc_type, angles),
+         backend=backend)
 
     return angles
 
@@ -772,19 +747,15 @@ def calc_dihedrals(coords1, coords2, coords3, coords4, box=None, result=None,
     else:
         angles = np.zeros((numatom,), np.float64)
 
+    pbc_type = PBCtype.none
     if box is not None:
         if boxtype == 'ortho':
-            _run("calc_dihedral_ortho",
-                   args=(atom1, atom2, atom3, atom4, box, angles),
-                   backend=backend)
+            pbc_type = PBCtype.ortho
         else:
-            _run("calc_dihedral_triclinic",
-                   args=(atom1, atom2, atom3, atom4, box, angles),
-                   backend=backend)
-    else:
-        _run("calc_dihedral",
-               args=(atom1, atom2, atom3, atom4, angles),
-               backend=backend)
+            pbc_type = PBCtype.triclinic
+
+    _run("calc_dihedral", args=(atom1, atom2, atom3, atom4, box, pbc_type,
+         angles), backend=backend)
 
     return angles
 

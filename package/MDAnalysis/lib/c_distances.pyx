@@ -35,29 +35,37 @@ cimport numpy
 cdef extern from "calc_distances.h":
     ctypedef float coordinate[3]
     cdef bint USED_OPENMP
-    void _calc_distance_array(coordinate* ref, int numref, coordinate* conf, int numconf, double* distances)
-    void _calc_distance_array_ortho(coordinate* ref, int numref, coordinate* conf, int numconf, float* box, double* distances)
-    void _calc_distance_array_triclinic(coordinate* ref, int numref, coordinate* conf, int numconf, float* box, double* distances)
-    void _calc_self_distance_array(coordinate* ref, int numref, double* distances)
-    void _calc_self_distance_array_ortho(coordinate* ref, int numref, float* box, double* distances)
-    void _calc_self_distance_array_triclinic(coordinate* ref, int numref, float* box, double* distances)
+    cdef enum PBCenum "ePBC":
+        PBCortho, PBCtriclinic, PBCnone, PBCunknown
+    void _calc_distance_array(coordinate* ref, int numref, coordinate* conf,
+                              int numconf, float* box, PBCenum pbc_type,
+                              double* distances)
+    void _calc_self_distance_array(coordinate* ref, int numref, float* box,
+                                   PBCenum pbc_type, double* distances)
     void _coord_transform(coordinate* coords, int numCoords, coordinate* box)
-    void _calc_bond_distance(coordinate* atom1, coordinate* atom2, int numatom, double* distances)
-    void _calc_bond_distance_ortho(coordinate* atom1, coordinate* atom2, int numatom, float*box, double* distances)
-    void _calc_bond_distance_triclinic(coordinate* atom1, coordinate* atom2, int numatom, float* box, double* distances)
-    void _calc_angle(coordinate* atom1, coordinate* atom2, coordinate* atom3, int numatom, double* angles)
-    void _calc_angle_ortho(coordinate* atom1, coordinate* atom2, coordinate* atom3, int numatom, float* box, double* angles)
-    void _calc_angle_triclinic(coordinate* atom1, coordinate* atom2, coordinate* atom3, int numatom, float* box, double* angles)
-    void _calc_dihedral(coordinate* atom1, coordinate* atom2, coordinate* atom3, coordinate* atom4, int numatom, double* angles)
-    void _calc_dihedral_ortho(coordinate* atom1, coordinate* atom2, coordinate* atom3, coordinate* atom4, int numatom, float* box, double* angles)
-    void _calc_dihedral_triclinic(coordinate* atom1, coordinate* atom2, coordinate* atom3, coordinate* atom4, int numatom, float* box, double* angles)
+    void _calc_bond_distance(coordinate* atom1, coordinate* atom2, int numatom,
+                             float* box, PBCenum pbc_type, double* distances)
+    void _calc_angle(coordinate* atom1, coordinate* atom2, coordinate* atom3,
+                     int numatom, float* box, PBCenum pbc_type, double* angles)
+    void _calc_dihedral(coordinate* atom1, coordinate* atom2, coordinate* atom3,
+                        coordinate* atom4, int numatom, float* box,
+                        PBCenum pbc_type, double* angles)
     void _ortho_pbc(coordinate* coords, int numcoords, float* box)
     void _triclinic_pbc(coordinate* coords, int numcoords, float* box)
-    void _minimum_image_ortho(double *x, float *box, float *inverse_box)
+    void _minimum_image_ortho(double* x, float* box, float* inverse_box)
 
 OPENMP_ENABLED = True if USED_OPENMP else False
 
+class PBCtype(object):
+    # wrapper to expose the ePBC enumerator to Python
+    ortho = PBCortho
+    triclinic = PBCtriclinic
+    none = PBCnone
+    unknown = PBCunknown
+
 def calc_distance_array(numpy.ndarray ref, numpy.ndarray conf,
+                        numpy.ndarray box,
+                        PBCenum pbc_type,
                         numpy.ndarray result):
     cdef int confnum, refnum
     confnum = conf.shape[0]
@@ -65,59 +73,21 @@ def calc_distance_array(numpy.ndarray ref, numpy.ndarray conf,
 
     _calc_distance_array(<coordinate*>ref.data, refnum,
                          <coordinate*>conf.data, confnum,
+                         NULL if box is None else <float*>box.data,
+                         pbc_type,
                          <double*>result.data)
 
-def calc_distance_array_ortho(numpy.ndarray ref, numpy.ndarray conf,
-                              numpy.ndarray box,
-                              numpy.ndarray result):
-    cdef int confnum, refnum
-    confnum = conf.shape[0]
-    refnum = ref.shape[0]
-
-    _calc_distance_array_ortho(<coordinate*>ref.data, refnum,
-                               <coordinate*>conf.data, confnum,
-                               <float*>box.data,
-                               <double*>result.data)
-
-def calc_distance_array_triclinic(numpy.ndarray ref, numpy.ndarray conf,
-                                  numpy.ndarray box,
-                                  numpy.ndarray result):
-    cdef int confnum, refnum
-    confnum = conf.shape[0]
-    refnum = ref.shape[0]
-
-    _calc_distance_array_triclinic(<coordinate*>ref.data, refnum,
-                                   <coordinate*>conf.data, confnum,
-                                   <float*>box.data,
-                                   <double*>result.data)
-
 def calc_self_distance_array(numpy.ndarray ref,
+                             numpy.ndarray box,
+                             PBCenum pbc_type,
                              numpy.ndarray result):
     cdef int refnum
     refnum = ref.shape[0]
 
     _calc_self_distance_array(<coordinate*>ref.data, refnum,
+                              NULL if box is None else <float*>box.data,
+                              pbc_type,
                               <double*>result.data)
-
-def calc_self_distance_array_ortho(numpy.ndarray ref,
-                                   numpy.ndarray box,
-                                   numpy.ndarray result):
-    cdef int refnum
-    refnum = ref.shape[0]
-
-    _calc_self_distance_array_ortho(<coordinate*>ref.data, refnum,
-                                    <float*>box.data,
-                                    <double*>result.data)
-
-def calc_self_distance_array_triclinic(numpy.ndarray ref,
-                                       numpy.ndarray box,
-                                       numpy.ndarray result):
-    cdef int refnum
-    refnum = ref.shape[0]
-
-    _calc_self_distance_array_triclinic(<coordinate*>ref.data, refnum,
-                                        <float*>box.data,
-                                        <double*>result.data)
 
 def coord_transform(numpy.ndarray coords,
                     numpy.ndarray box):
@@ -127,122 +97,37 @@ def coord_transform(numpy.ndarray coords,
     _coord_transform(<coordinate*> coords.data, numcoords,
                      <coordinate*> box.data)
 
-def calc_bond_distance(numpy.ndarray coords1,
-                       numpy.ndarray coords2,
+def calc_bond_distance(numpy.ndarray coords1, numpy.ndarray coords2,
+                       numpy.ndarray box, PBCenum pbc_type,
                        numpy.ndarray results):
     cdef int numcoords
     numcoords = coords1.shape[0]
 
-    _calc_bond_distance(<coordinate*> coords1.data, <coordinate*> coords2.data,
-                        numcoords,
-                        <double*>results.data)
+    _calc_bond_distance(<coordinate*>coords1.data, <coordinate*>coords2.data,
+                        numcoords, NULL if box is None else <float*>box.data,
+                        pbc_type, <double*>results.data)
 
-def calc_bond_distance_ortho(numpy.ndarray coords1,
-                             numpy.ndarray coords2,
-                             numpy.ndarray box,
-                             numpy.ndarray results):
-    cdef int numcoords
-    numcoords = coords1.shape[0]
-
-    _calc_bond_distance_ortho(<coordinate*> coords1.data, <coordinate*> coords2.data,
-                              numcoords,
-                              <float*>box.data,
-                              <double*>results.data)
-
-def calc_bond_distance_triclinic(numpy.ndarray coords1,
-                                 numpy.ndarray coords2,
-                                 numpy.ndarray box,
-                                 numpy.ndarray results):
-    cdef int numcoords
-    numcoords = coords1.shape[0]
-
-    _calc_bond_distance_triclinic(<coordinate*> coords1.data, <coordinate*> coords2.data,
-                                  numcoords,
-                                  <float*>box.data,
-                                  <double*>results.data)
-
-def calc_angle(numpy.ndarray coords1,
-               numpy.ndarray coords2,
-               numpy.ndarray coords3,
+def calc_angle(numpy.ndarray coords1, numpy.ndarray coords2,
+               numpy.ndarray coords3, numpy.ndarray box, PBCenum pbc_type,
                numpy.ndarray results):
     cdef int numcoords
     numcoords = coords1.shape[0]
 
-    _calc_angle(<coordinate*> coords1.data, <coordinate*> coords2.data,
-                <coordinate*> coords3.data,
-                numcoords,
+    _calc_angle(<coordinate*>coords1.data, <coordinate*>coords2.data,
+                <coordinate*>coords3.data, numcoords,
+                NULL if box is None else <float*>box.data, pbc_type,
                 <double*>results.data)
 
-def calc_angle_ortho(numpy.ndarray coords1,
-                     numpy.ndarray coords2,
-                     numpy.ndarray coords3,
-                     numpy.ndarray box,
-                     numpy.ndarray results):
+def calc_dihedral(numpy.ndarray coords1, numpy.ndarray coords2,
+                 numpy.ndarray coords3, numpy.ndarray coords4,
+                 numpy.ndarray box, PBCenum pbc_type, numpy.ndarray results):
     cdef int numcoords
     numcoords = coords1.shape[0]
 
-    _calc_angle_ortho(<coordinate*> coords1.data, <coordinate*> coords2.data,
-                      <coordinate*> coords3.data,
-                      numcoords,
-                      <float*>box.data,
-                      <double*>results.data)
-
-def calc_angle_triclinic(numpy.ndarray coords1,
-                         numpy.ndarray coords2,
-                         numpy.ndarray coords3,
-                         numpy.ndarray box,
-                         numpy.ndarray results):
-    cdef int numcoords
-    numcoords = coords1.shape[0]
-
-    _calc_angle_triclinic(<coordinate*> coords1.data, <coordinate*> coords2.data,
-                          <coordinate*> coords3.data,
-                          numcoords,
-                          <float*>box.data,
-                          <double*>results.data)
-
-def calc_dihedral(numpy.ndarray coords1,
-                 numpy.ndarray coords2,
-                 numpy.ndarray coords3,
-                 numpy.ndarray coords4,
-                 numpy.ndarray results):
-    cdef int numcoords
-    numcoords = coords1.shape[0]
-
-    _calc_dihedral(<coordinate*> coords1.data, <coordinate*> coords2.data,
-                  <coordinate*> coords3.data, <coordinate*> coords4.data,
-                  numcoords,
-                  <double*>results.data)
-
-def calc_dihedral_ortho(numpy.ndarray coords1,
-                       numpy.ndarray coords2,
-                       numpy.ndarray coords3,
-                       numpy.ndarray coords4,
-                       numpy.ndarray box,
-                       numpy.ndarray results):
-    cdef int numcoords
-    numcoords = coords1.shape[0]
-
-    _calc_dihedral_ortho(<coordinate*> coords1.data, <coordinate*> coords2.data,
-                        <coordinate*> coords3.data, <coordinate*> coords4.data,
-                        numcoords,
-                        <float*>box.data,
-                        <double*>results.data)
-
-def calc_dihedral_triclinic(numpy.ndarray coords1,
-                           numpy.ndarray coords2,
-                           numpy.ndarray coords3,
-                           numpy.ndarray coords4,
-                           numpy.ndarray box,
-                           numpy.ndarray results):
-    cdef int numcoords
-    numcoords = coords1.shape[0]
-
-    _calc_dihedral_triclinic(<coordinate*> coords1.data, <coordinate*> coords2.data,
-                            <coordinate*> coords3.data, <coordinate*> coords4.data,
-                            numcoords,
-                            <float*>box.data,
-                            <double*>results.data)
+    _calc_dihedral(<coordinate*>coords1.data, <coordinate*>coords2.data,
+                  <coordinate*>coords3.data, <coordinate*>coords4.data,
+                  numcoords, NULL if box is None else <float*>box.data,
+                  pbc_type, <double*>results.data)
 
 def ortho_pbc(numpy.ndarray coords, numpy.ndarray box):
     cdef int numcoords
