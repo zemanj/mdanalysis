@@ -32,8 +32,11 @@ cimport cython
 import numpy
 cimport numpy
 
+from libc.stdint cimport int64_t
+
 cdef extern from "calc_distances.h":
     ctypedef float coordinate[3]
+    ctypedef int64_t histbin
     cdef bint USED_OPENMP
     cdef enum PBCenum "ePBC":
         PBCortho, PBCtriclinic, PBCnone, PBCunknown
@@ -42,6 +45,12 @@ cdef extern from "calc_distances.h":
                               double* distances)
     void _calc_self_distance_array(coordinate* ref, int numref, float* box,
                                    PBCenum pbc_type, double* distances)
+    void _calc_distance_histogram(coordinate* ref, int numref, coordinate* conf,
+                                  int numconf, float* box, PBCenum pbc_type,
+                                  double binw, histbin* histo, int numhisto)
+    void _calc_self_distance_histogram(coordinate* ref, int numref, float* box,
+                                       PBCenum pbc_type, double binw,
+                                       histbin* histo, int numhisto)
     void _coord_transform(coordinate* coords, int numCoords, coordinate* box)
     void _calc_bond_distance(coordinate* atom1, coordinate* atom2, int numatom,
                              float* box, PBCenum pbc_type, double* distances)
@@ -88,6 +97,35 @@ def calc_self_distance_array(numpy.ndarray ref,
                               NULL if box is None else <float*>box.data,
                               pbc_type,
                               <double*>result.data)
+
+def calc_distance_histogram(numpy.ndarray ref, numpy.ndarray conf,
+                            numpy.ndarray box, PBCenum pbc_type,
+                            numpy.ndarray histo, bin_width):
+    cdef int confnum, refnum, histonum
+    cdef double binwidth
+    confnum = conf.shape[0]
+    refnum = ref.shape[0]
+    histonum = histo.shape[0]
+    binwidth = bin_width
+
+    _calc_distance_histogram(<coordinate*>ref.data, refnum,
+                             <coordinate*>conf.data, confnum,
+                             NULL if box is None else <float*>box.data,
+                             pbc_type, binwidth, <histbin*>histo.data, histonum)
+
+def calc_self_distance_histogram(numpy.ndarray ref, numpy.ndarray box,
+                                 PBCenum pbc_type, numpy.ndarray histo,
+                                 bin_width):
+    cdef int refnum, histonum
+    cdef double binwidth
+    refnum = ref.shape[0]
+    histonum = histo.shape[0]
+    binwidth = bin_width
+
+    _calc_self_distance_histogram(<coordinate*>ref.data, refnum,
+                                  NULL if box is None else <float*>box.data,
+                                  pbc_type, binwidth, <histbin*>histo.data,
+                                  histonum)
 
 def coord_transform(numpy.ndarray coords,
                     numpy.ndarray box):

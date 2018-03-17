@@ -55,6 +55,8 @@ Functions
 
 .. autofunction:: distance_array(reference, configuration [, box [, result [, backend]]])
 .. autofunction:: self_distance_array(reference [, box [,result [, backend]]])
+.. autofunction:: distance_histogram(reference, configuration, bin_width [, histogram [, n_bins [, box [, backend]]]])
+.. autofunction:: self_distance_histogram(reference, bin_width [, histogram [, n_bins [, box [, backend]]]])
 .. autofunction:: calc_bonds(atom1, atom2 [, box, [, result [, backend]]])
 .. autofunction:: calc_angles(atom1, atom2, atom3 [,box [, result [, backend]]])
 .. autofunction:: calc_dihedrals(atom1, atom2, atom3, atom4 [,box [, result [, backend]]])
@@ -103,6 +105,8 @@ def _run(funcname, args=None, kwargs=None, backend="serial"):
 from .c_distances import (PBCtype,
                           calc_distance_array,
                           calc_self_distance_array,
+                          calc_distance_histogram,
+                          calc_self_distance_histogram,
                           coord_transform,
                           calc_bond_distance,
                           calc_angle,
@@ -194,6 +198,36 @@ def _check_results_array(results, size):
                          "should be {0}, got {1}".format(size, results.shape))
     if results.dtype != np.float64:
         raise TypeError("Results array must be of type float64")
+
+
+def _check_histogram_array(histogram, n=None, desc=None):
+    """Check the histogram array is ok to use
+
+    Must be:
+      (n,) in shape
+      int64 data
+    """
+    if desc is None:
+        desc = "Histogram array"
+    if (histogram.ndim != 1):
+        raise ValueError("{0} has incorrect number of dimensions, "
+                         "should be 1-dimensional, "
+                         "got {1} dimensions".format(desc, histogram.ndim))
+    if ((n is not None) and histogram.shape[0] != n):
+        raise ValueError("{0} has incorrect shape, should be ({1},), "
+                         "got ({2},)".format(desc, n, histogram.shape[0]))
+    if histogram.dtype != np.int64:
+        raise TypeError("{0} must be of type int64")
+
+
+def _check_nonzero_positive(value, desc):
+    """Check value is strictly positive
+
+    Must be:
+      greater than zero
+    """
+    if (value <= 0):
+        raise ValueError("{0} must be greater than zero, got {1}".format(desc, value))
 
 
 def _check_lengths_match(*arrays):
@@ -342,7 +376,6 @@ def self_distance_array(reference, box=None, result=None, backend="serial"):
 
     _check_array(ref, 'ref')
 
-    with_PBC = (box is not None)
     if box is not None:
         boxtype = _box_check(box)
         # Convert [A,B,C,alpha,beta,gamma] to [[A],[B],[C]]
@@ -371,6 +404,173 @@ def self_distance_array(reference, box=None, result=None, backend="serial"):
          backend=backend)
 
     return distances
+
+
+def distance_histogram(reference, configuration, bin_width, histogram=None, n_bins=None, box=None, backend="serial"):
+    """Calculate a histogram of all distances between a reference set and another configuration.
+
+    If an *box* is supplied then a minimum image convention is used when calculating distances.
+
+    If a 1D numpy array of dtype ``numpy.int64`` is provided in *histogram* then the resulting
+    histogram is *added* to this preallocated array. This can speed up calculations.
+
+    Otherwise, the number of histogram bins must be specified with *n_bins*.
+
+    Parameters
+    ----------
+    reference : numpy.ndarray with dtype=float32
+        Reference coordinate array.
+    configuration : numpy.ndarray with dtype=float32
+        Configuration coordinate array.
+    box : numpy.ndarray or None
+        Dimensions of the cell; if provided, the minimum image convention is
+        applied. The dimensions must be provided in the same format as returned
+        by :attr:`MDAnalysis.coordinates.base.Timestep.dimensions`: ``[lx,
+        ly, lz, alpha, beta, gamma]``.
+    bin_width : number or string representing a number
+        The bin width of the histogram. Must be greater than zero.
+    histogram : 1D numpy.ndarray with dtype=numpy.int64, optional
+        Preallocated histogram array to which the result is *added*.
+        Must be supplied if n_bins is not given.
+    n_bins : int, optional
+        Number of histogram bins. Must be given if histogram is not supplied.
+    backend : str, optional (default: "serial")
+        Select the type of acceleration; "serial" is always available. Other
+        possibilities are "OpenMP" (OpenMP).
+
+    Returns
+    -------
+    h : 1D numpy.ndarray with dtype=np.int64
+        numpy array with the histogram of all distances ``d[i,j]`` between reference
+        coordinates `i` and configuration coordinates `j`. If the input parameter
+        `histogram` is supplied, the returned array will be a reference of the `histogram`
+        array.
+
+    Note
+    ----
+    This method is slower than it could be because internally we need to make
+    copies of the ref and conf arrays.
+
+
+    .. versionadded:: 0.16.3
+    """
+
+    ref = reference.copy('C')
+    conf = configuration.copy('C')
+
+    _check_array(conf, 'conf')
+    _check_array(ref, 'ref')
+    _check_nonzero_positive(bin_width, 'bin_width')
+
+    if box is not None:
+        boxtype = _box_check(box)
+        # Convert [A,B,C,alpha,beta,gamma] to [[A],[B],[C]]
+        if (boxtype == 'tri_box'):
+            box = triclinic_vectors(box)
+        if (boxtype == 'tri_vecs_bad'):
+            box = triclinic_vectors(triclinic_box(box[0], box[1], box[2]))
+
+    if histogram is not None:
+        _check_histogram_array(histogram, n_bins, 'histogram')
+        histo = np.asarray(histogram)
+    elif n_bins != None:
+        histo = np.zeros((n_bins,), np.int64)
+    else:
+        raise ValueError("Either histogram or n_bins must be specified.")
+    try:
+        bin_width = float(bin_width)
+    except TypeError:
+        raise TypeError("bin_width must be either a number or a string representing a number")
+
+    pbc_type = PBCtype.none
+    if box is not None:
+        if boxtype == 'ortho':
+            pbc_type = PBCtype.ortho
+        else:
+            pbc_type = PBCtype.triclinic
+
+    _run("calc_distance_histogram", args=(ref, conf, box, pbc_type, histo, binwidth),
+         backend=backend)
+
+    return histo
+
+
+def self_distance_histogram(reference, bin_width, histogram=None, n_bins=None, box=None, backend="serial"):
+    """Calculate a histogram of all distances within a configuration *reference*.
+
+    If a *box* is supplied then a minimum image convention is used before
+    calculating distances.
+
+    If a 1D numpy array of dtype ``numpy.int64`` is provided in *histogram* then the resulting
+    histogram is *added* to this preallocated array. This can speed up calculations.
+
+    Parameters
+    ----------
+    reference : numpy.ndarray with dtype=numpy.float32
+        Reference coordinate array with ``N=len(ref)`` coordinates.
+    box : array or None
+        Dimensions of the cell; if provided, the minimum image convention is
+        applied. The dimensions must be provided in the same format as returned
+        by :attr:`MDAnalysis.coordinates.base.Timestep.dimensions`: ``[lx,
+        ly, lz, alpha, beta, gamma]``.
+    bin_width : number or string representing a number
+        The bin width of the histogram. Must be greater than zero.
+    histogram : 1D numpy.ndarray with dtype=numpy.int64, optional
+        Preallocated histogram array to which the result is *added*.
+        Must be supplied if n_bins is not given.
+    n_bins : int, optional
+        Number of histogram bins. Must be given if histogram is not supplied.
+    backend
+        Select the type of acceleration; "serial" is always available. Other
+        possibilities are "OpenMP" (OpenMP).
+
+    Returns
+    -------
+    h : 1D numpy.ndarray with dtype=np.int64
+        numpy array with the histogram of all distances distances dist[i,j] between ref
+        coordinates i and j. If the input parameter `histogram` is supplied, the returned
+        array will be a reference of the `histogram` array.
+
+    Note
+    ----
+    This method is slower than it could be because internally we need to make
+    copies of the coordinate arrays.
+
+
+    .. versionadded:: 0.16.3
+    """
+    ref = reference.copy('C')
+
+    _check_array(ref, 'ref')
+    _check_nonzero_positive(bin_width, 'bin_width')
+
+    if box is not None:
+        boxtype = _box_check(box)
+        # Convert [A,B,C,alpha,beta,gamma] to [[A],[B],[C]]
+        if (boxtype == 'tri_box'):
+            box = triclinic_vectors(box)
+        if (boxtype == 'tri_vecs_bad'):
+            box = triclinic_vectors(triclinic_box(box[0], box[1], box[2]))
+
+    if histogram is not None:
+        _check_histogram_array(histogram, n_bins, 'histogram')
+        histo = np.asarray(histogram)
+    elif n_bins != None:
+        histo = np.zeros((n_bins,), np.int64)
+    else:
+        raise ValueError("Either histogram or n_bins must be specified.")
+
+    pbc_type = PBCtype.none
+    if box is not None:
+        if boxtype == 'ortho':
+            pbc_type = PBCtype.ortho
+        else:
+            pbc_type = PBCtype.triclinic
+
+    _run("calc_self_distance_histogram", args=(ref, box, pbc_type, histo, bin_width),
+         backend=backend)
+
+    return histo
 
 
 def transform_RtoS(inputcoords, box, backend="serial"):
