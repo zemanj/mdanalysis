@@ -19,10 +19,14 @@
 #ifndef __DISTANCES_H
 #define __DISTANCES_H
 
+#include <assert.h>
 #include <math.h>
 #include <float.h>
+#include <inttypes.h>
+#include <stdlib.h>
 
 typedef float coordinate[3];
+typedef int64_t histbin;
 
 typedef enum ePBC {
     PBCortho,
@@ -50,7 +54,8 @@ static void _minimum_image_ortho(double *dx, float *box, float *inverse_box)
     }
 }
 
-static inline void _minimum_image_ortho_lazy(double* dx, float* box, float* half_box)
+static inline void _minimum_image_ortho_lazy(double* dx, float* box,
+                                             float* half_box)
 {
     // Minimum image convention for orthogonal boxes.
     // Assumes that the maximum separation is less than 1.5 times the box length
@@ -78,25 +83,21 @@ static inline void _minimum_image_triclinic_lazy(double *dx, float* box_vectors)
     // Requires a box (flattened array box_vectors).
     // Assumes box having zero values for box_vectors[1], box_vectors[2] and
     // box_vectors[5]
-    double dmin[3] = {FLT_MAX}, rx[3], ry[3], rz[3];
-    double min = FLT_MAX, d;
-
+    double rx_0, ry_0, ry_1, d, min = FLT_MAX;
+    double rz[3], dmin[3] = {FLT_MAX};
     for (int x = -1; x < 2; ++x) {
-        rx[0] = dx[0] + box_vectors[0] * x;
-        rx[1] = dx[1];
-        rx[2] = dx[2];
+        rx_0 = dx[0] + box_vectors[0] * x;
         for (int y = -1; y < 2; ++y) {
-            ry[0] = rx[0] + box_vectors[3] * y;
-            ry[1] = rx[1] + box_vectors[4] * y;
-            ry[2] = rx[2];
+            ry_0 = rx_0  + box_vectors[3] * y;
+            ry_1 = dx[1] + box_vectors[4] * y;
             for (int z = -1; z < 2; ++z) {
-                rz[0] = ry[0] + box_vectors[6] * z;
-                rz[1] = ry[1] + box_vectors[7] * z;
-                rz[2] = ry[2] + box_vectors[8] * z;
+                rz[0] = ry_0  + box_vectors[6] * z;
+                rz[1] = ry_1  + box_vectors[7] * z;
+                rz[2] = dx[2] + box_vectors[8] * z;
                 d = rz[0] * rz[0] + rz[1] * rz[1] + rz[2] * rz[2];
                 if (d < min) {
+                    min = d;
                     for (int i = 0; i < 3; ++i){
-                        min = d;
                         dmin[i] = rz[i];
                     }
                 }
@@ -110,14 +111,11 @@ static inline void _minimum_image_triclinic_lazy(double *dx, float* box_vectors)
 
 static void _ortho_pbc(coordinate* coords, int numcoords, float* box)
 {
-    int s[3];
+    double s[3];
     float box_inverse[3];
     box_inverse[0] = 1.0 / box[0];
     box_inverse[1] = 1.0 / box[1];
     box_inverse[2] = 1.0 / box[2];
-    // We unfortunately have to promote the box to double.
-    // Otherwise, too much precision is lost if the factor s is large.
-    double dbox[3] = {box[0], box[1], box[2]};
 #ifdef PARALLEL
     #pragma omp parallel for private(s) shared(coords)
 #endif
@@ -125,9 +123,9 @@ static void _ortho_pbc(coordinate* coords, int numcoords, float* box)
         s[0] = floor(coords[i][0] * box_inverse[0]);
         s[1] = floor(coords[i][1] * box_inverse[1]);
         s[2] = floor(coords[i][2] * box_inverse[2]);
-        coords[i][0] -= s[0] * dbox[0];
-        coords[i][1] -= s[1] * dbox[1];
-        coords[i][2] -= s[2] * dbox[2];
+        coords[i][0] -= s[0] * box[0];
+        coords[i][1] -= s[1] * box[1];
+        coords[i][2] -= s[2] * box[2];
     }
 }
 
@@ -149,27 +147,23 @@ static void _triclinic_pbc(coordinate* coords, int numcoords,
     float bi6 = (box_vectors[3] * box_vectors[7] * bi4 - box_vectors[6]) * \
                 bi0 * bi8;
     float bi7 = -box_vectors[7] * bi4 * bi8;
-    // We unfortunately have to promote the box to double.
-    // Otherwise, too much precision is lost if the factor s is large.
-    double dbox_vectors[9] = {box_vectors[0], box_vectors[1], box_vectors[2], 
-                              box_vectors[3], box_vectors[4], box_vectors[5], 
-                              box_vectors[6], box_vectors[7], box_vectors[8]};
 #ifdef PARALLEL
     #pragma omp parallel for shared(coords)
 #endif
     for (int i=0; i < numcoords; i++){
+        double s;
         // translate coords[i] to central cell along c-axis
-        int s = floor(coords[i][2] * bi8);
-        coords[i][0] -= s * dbox_vectors[6];
-        coords[i][1] -= s * dbox_vectors[7];
-        coords[i][2] -= s * dbox_vectors[8];
+        s = floor(coords[i][2] * bi8);
+        coords[i][0] -= s * box_vectors[6];
+        coords[i][1] -= s * box_vectors[7];
+        coords[i][2] -= s * box_vectors[8];
         // translate remainder of coords[i] to central cell along b-axis
         s = floor(coords[i][1] * bi4 + coords[i][2] * bi7);
-        coords[i][0] -= s * dbox_vectors[3];
-        coords[i][1] -= s * dbox_vectors[4];
+        coords[i][0] -= s * box_vectors[3];
+        coords[i][1] -= s * box_vectors[4];
         // translate remainder of coords[i] to central cell along a-axis
         s = floor(coords[i][0] * bi0 + coords[i][1] * bi3 + coords[i][2] * bi6);
-        coords[i][0] -= s * dbox_vectors[0];
+        coords[i][0] -= s * box_vectors[0];
     }
 }
 
@@ -178,7 +172,7 @@ static void _calc_distance_array(coordinate* ref, int numref, coordinate* conf,
                                  double* distances)
 {
     double dx[3];
-    float half_box[3];
+    float half_box[3] = {0.0};
 
     switch(pbc_type) {
         case PBCortho:
@@ -220,13 +214,12 @@ static void _calc_distance_array(coordinate* ref, int numref, coordinate* conf,
     }
 }
 
-static void _calc_self_distance_array(coordinate* ref, int numref,
-                                      float* box, ePBC pbc_type,
-                                      double* distances)
+static void _calc_self_distance_array(coordinate* ref, int numref, float* box,
+                                      ePBC pbc_type, double* distances)
 {
     int distpos = 0;
     double dx[3];
-    float half_box[3];
+    float half_box[3] = {0.0};
 
     switch(pbc_type) {
         case PBCortho:
@@ -268,6 +261,151 @@ static void _calc_self_distance_array(coordinate* ref, int numref,
             *(distances + distpos) = sqrt(rsq);
             distpos += 1;
         }
+    }
+}
+
+static void _calc_distance_histogram(coordinate* ref, int numref,
+                                     coordinate* conf, int numconf,
+                                     float* box, ePBC pbc_type,
+                                     double binw, histbin* histo, int numhisto)
+{
+    double inverse_binw = 1.0 / binw;
+    double r2_max = (binw * numhisto) * (binw * numhisto);
+    float half_box[3] = {0.0};
+
+    switch(pbc_type) {
+        case PBCortho:
+            half_box[0] = 0.5 * box[0];
+            half_box[1] = 0.5 * box[1];
+            half_box[2] = 0.5 * box[2];
+            _ortho_pbc(ref, numref, box);
+            break;
+        case PBCtriclinic:
+            _triclinic_pbc(ref, numref, box);
+            break;
+        default:
+            break;
+    };
+
+#ifdef PARALLEL
+    #pragma omp parallel shared(histo)
+#endif
+    {
+        int k;
+        double dx[3];
+        double r2;
+#ifdef PARALLEL
+        histbin* thread_local_histo = (histbin*) calloc((size_t) numhisto,
+                                                        sizeof(histbin));
+        assert(thread_local_histo != NULL);
+        #pragma omp for nowait
+#endif
+        for (int i = 0; i < numref; i++) {
+            for (int j = 0; j < numconf; j++) {
+                dx[0] = conf[j][0] - ref[i][0];
+                dx[1] = conf[j][1] - ref[i][1];
+                dx[2] = conf[j][2] - ref[i][2];
+                switch(pbc_type) {
+                    case PBCortho:
+                        _minimum_image_ortho_lazy(dx, box, half_box);
+                        break;
+                    case PBCtriclinic:
+                        _minimum_image_triclinic_lazy(dx, box);
+                        break;
+                    default:
+                        break;
+                };
+                r2 = dx[0] * dx[0] + dx[1] * dx[1] + dx[2] * dx[2];
+                if (r2 < r2_max) {
+                    k = (int) (sqrt(r2) * inverse_binw);
+#ifdef PARALLEL
+                    thread_local_histo[k] += 1;
+#else
+                    histo[k] += 1;
+#endif
+                }
+            }
+        }
+#ifdef PARALLEL
+        // gather local results from threads
+        for (int i = 0; i < numhisto; i++) {
+            #pragma omp atomic
+            histo[i] += thread_local_histo[i];
+        }
+        free(thread_local_histo);
+#endif
+    }
+}
+
+static void _calc_self_distance_histogram(coordinate* ref, int numref,
+                                          float* box, ePBC pbc_type,
+                                          double binw, histbin* histo,
+                                          int numhisto)
+{
+    double inverse_binw = 1.0 / binw;
+    double r2_max = (binw * numhisto) * (binw * numhisto);
+    float half_box[3] = {0.0};
+
+    switch(pbc_type) {
+        case PBCortho:
+            half_box[0] = 0.5 * box[0];
+            half_box[1] = 0.5 * box[1];
+            half_box[2] = 0.5 * box[2];
+            _ortho_pbc(ref, numref, box);
+            break;
+        case PBCtriclinic:
+            _triclinic_pbc(ref, numref, box);
+            break;
+        default:
+            break;
+    };
+#ifdef PARALLEL
+    #pragma omp parallel shared(histo)
+#endif
+    {
+        int k;
+        double dx[3];
+        double r2;
+#ifdef PARALLEL
+        histbin* thread_local_histo = (histbin*) calloc((size_t) numhisto,
+                                                        sizeof(histbin));
+        assert(thread_local_histo != NULL);
+        #pragma omp for nowait
+#endif
+        for (int i = 0; i < numref - 1; i++) {
+            for (int j = i + 1; j < numref; j++) {
+                dx[0] = ref[j][0] - ref[i][0];
+                dx[1] = ref[j][1] - ref[i][1];
+                dx[2] = ref[j][2] - ref[i][2];
+                switch(pbc_type) {
+                    case PBCortho:
+                        _minimum_image_ortho_lazy(dx, box, half_box);
+                        break;
+                    case PBCtriclinic:
+                        _minimum_image_triclinic_lazy(dx, box);
+                        break;
+                    default:
+                        break;
+                };
+                r2 = dx[0] * dx[0] + dx[1] * dx[1] + dx[2] * dx[2];
+                if (r2 < r2_max) {
+                    k = (int) (sqrt(r2) * inverse_binw);
+#ifdef PARALLEL
+                    thread_local_histo[k] += 1;
+#else
+                    histo[k] += 1;
+#endif
+                }
+            }
+        }
+#ifdef PARALLEL
+        // gather local results from threads
+        for (int i = 0; i < numhisto; i++) {
+            #pragma omp atomic
+            histo[i] += thread_local_histo[i];
+        }
+        free(thread_local_histo);
+#endif
     }
 }
 
@@ -398,7 +536,7 @@ static void _calc_angle(coordinate* atom1, coordinate* atom2,
 }
 
 static inline void _calc_dihedral_angle(double* va, double* vb, double* vc,
-                                 double* result)
+                                        double* result)
 {
     // Returns atan2 from vectors va, vb, vc
     double n1[3], n2[3];
@@ -494,4 +632,4 @@ static void _calc_dihedral(coordinate* atom1, coordinate* atom2,
         _calc_dihedral_angle(va, vb, vc, angles + i);
     }
 }
-#endif
+#endif /* __DISTANCES_H */
