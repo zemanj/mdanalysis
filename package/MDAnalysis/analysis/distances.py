@@ -19,8 +19,6 @@
 # MDAnalysis: A Toolkit for the Analysis of Molecular Dynamics Simulations.
 # J. Comput. Chem. 32 (2011), 2319--2327, doi:10.1002/jcc.21787
 #
-#
-
 
 """
 Distance analysis --- :mod:`MDAnalysis.analysis.distances`
@@ -40,12 +38,14 @@ See Also
 from __future__ import absolute_import
 
 __all__ = ['distance_array', 'self_distance_array',
+           'distance_histogram', 'self_distance_histogram',
            'contact_matrix', 'dist', 'between']
 
 import numpy as np
 import scipy.sparse
 
-from MDAnalysis.lib.distances import distance_array, self_distance_array
+from MDAnalysis.lib.distances import distance_array, self_distance_array, \
+                                     distance_histogram, self_distance_histogram
 from MDAnalysis.lib.c_distances import contact_matrix_no_pbc, contact_matrix_pbc
 from MDAnalysis.lib.NeighborSearch import AtomNeighborSearch
 from MDAnalysis.lib.distances import calc_bonds

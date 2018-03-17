@@ -113,9 +113,13 @@ static void _ortho_pbc(coordinate* coords, int numcoords, float* box)
 {
     double s[3];
     float box_inverse[3];
-    box_inverse[0] = 1.0 / box[0];
-    box_inverse[1] = 1.0 / box[1];
-    box_inverse[2] = 1.0 / box[2];
+    box_inverse[0] = ((box[0] > FLT_EPSILON) ?  1.0 / box[0] : 0.0);
+    box_inverse[1] = ((box[1] > FLT_EPSILON) ?  1.0 / box[1] : 0.0);
+    box_inverse[2] = ((box[2] > FLT_EPSILON) ?  1.0 / box[2] : 0.0);
+    if ((box_inverse[0] == 0.0) && (box_inverse[1] == 0.0) && \
+        (box_inverse[2] == 0.0)) {
+        return;
+    }
 #ifdef PARALLEL
     #pragma omp parallel for private(s) shared(coords)
 #endif
@@ -140,9 +144,12 @@ static void _triclinic_pbc(coordinate* coords, int numcoords,
     //   [ 1/b0                      ,  0         , 0   ]
     //   [-b3/(b0*b4)                ,  1/b4      , 0   ]
     //   [ (b3*b7/(b0*b4) - b6/b0)/b8, -b7/(b4*b8), 1/b8]
-    float bi0 = 1.0 / box_vectors[0];
-    float bi4 = 1.0 / box_vectors[4];
-    float bi8 = 1.0 / box_vectors[8];
+    float bi0 = ((box_vectors[0] > FLT_EPSILON) ?  1.0 / box_vectors[0] : 0.0);
+    float bi4 = ((box_vectors[4] > FLT_EPSILON) ?  1.0 / box_vectors[4] : 0.0);
+    float bi8 = ((box_vectors[8] > FLT_EPSILON) ?  1.0 / box_vectors[8] : 0.0);
+    if ((bi0 == 0.0) && (bi4 == 0.0) && (bi8 == 0.0)) {
+        return;
+    }
     float bi3 = -box_vectors[3] * bi0 * bi4;
     float bi6 = (box_vectors[3] * box_vectors[7] * bi4 - box_vectors[6]) * \
                 bi0 * bi8;
