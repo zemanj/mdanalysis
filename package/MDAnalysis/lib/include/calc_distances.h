@@ -93,15 +93,14 @@
  * which guarantees 64-byte cachline-optimized memory usage and facilitates the
  * desired auto-vectorization of loops, especially when compiled with
  * -march=native on AVX-enabled machines.
- * Note that __BLOCKSIZE * sizeof(float) MUST be an integer multiple of
+ * Note that _BLOCKSIZE * sizeof(float) MUST be an integer multiple of
  * __MEMORY_ALIGNMENT!
  */
-#define __BLOCKSIZE (__MEMORY_ALIGNMENT / 2)
-#define __2_BLOCKSIZE (__BLOCKSIZE + __BLOCKSIZE)
-#define __BLOCKSIZE_2 (__BLOCKSIZE * __BLOCKSIZE)
-#define __2_BLOCKSIZE_2 (__BLOCKSIZE_2 + __BLOCKSIZE_2)
-#define __3_BLOCKSIZE (3 * __BLOCKSIZE)
-#define __3_BLOCKSIZE_2 (3 * __BLOCKSIZE_2)
+#define _BLOCKSIZE (__MEMORY_ALIGNMENT / 2)
+#define _2_BLOCKSIZE (2 * _BLOCKSIZE)
+#define _3_BLOCKSIZE (3 * _BLOCKSIZE)
+#define _BLOCKSIZE_2 (_BLOCKSIZE * _BLOCKSIZE)
+#define _3_BLOCKSIZE_2 (3 * _BLOCKSIZE_2)
 
 /*
  * Enable static (i.e., compile-time) assertions, taken in part from
@@ -130,9 +129,9 @@
     #endif
 #endif
 
-// Assert that __BLOCKSIZE * sizeof(float) is divisible by __MEMORY_ALIGNMENT:
-STATIC_ASSERT(!(__BLOCKSIZE * sizeof(float) % __MEMORY_ALIGNMENT), \
-"__BLOCKSIZE*sizeof(float) is not an integer multiple of __MEMORY_ALIGNMENT!");
+// Assert that _BLOCKSIZE * sizeof(float) is divisible by __MEMORY_ALIGNMENT:
+STATIC_ASSERT(!(_BLOCKSIZE * sizeof(float) % __MEMORY_ALIGNMENT), \
+"BLOCKSIZE * sizeof(float) is not an integer multiple of __MEMORY_ALIGNMENT!");
 
 /*
  * Include required headers:
@@ -296,7 +295,7 @@ static void _triclinic_pbc(coordinate* coords, int numcoords,
 #ifdef PARALLEL
     #pragma omp parallel for shared(coords)
 #endif
-    for (int i=0; i < numcoords; i++){
+    for (int i = 0; i < numcoords; i++){
         double s;
         // translate coords[i] to central cell along c-axis
         s = floor(coords[i][2] * bi8);
@@ -783,8 +782,8 @@ static void _calc_dihedral(coordinate* atom1, coordinate* atom2,
  * @brief Memory-aligned calloc
  *
  * Neither C11 nor POSIX offer a memory-aligned calloc() routine, so here's our
- * own. Its interface is the same as for calloc(), but memory alignment and
- * padding is handled automatically. If C11 or POSIX features are not supported,
+ * own. Its interface is the same as for calloc(), and memory alignment and
+ * padding is handled automatically. If C11 or POSIX features are not available,
  * good ol' calloc() is used.
  */
 static void* aligned_calloc(size_t num, size_t size)
@@ -816,24 +815,24 @@ static void* aligned_calloc(size_t num, size_t size)
 }
 
 /**
- * @brief Arrange coordinates in blocks of __BLOCKSIZE positions
+ * @brief Arrange coordinates in blocks of _BLOCKSIZE positions
  *
- * This function takes an array @p pos containing @p npos xyz positions and
- * arranges them into a newly allocated(!) array and returned as a @<float*@>.
- * In this array, coordinates are aligned in blocks of @c __BLOCKSIZE positions
- * where each block contains first all x-, then y-, and finally all
- * z-coordinates. This layout improves memory locality and guarantees 64-byte
- * cachline-optimization. Furthermore, it avoids possible "false sharing"
+ * This function takes an array @p coords containing @p numcoords xyz positions
+ * and arranges them into a newly allocated(!) array returned as a @<float*@>
+ * pointer. In this array, coordinates are block-aligned in blocks of
+ * @c _BLOCKSIZE positions where each block contains first all x-, then y-, and
+ * finally all z-coordinates. This layout improves memory locality and
+ * guarantees 64-byte cachline-optimization. This helps to avoid "false sharing"
  * between OpenMP threads.
  */
 static inline float* _get_coords_in_blocks(const coordinate* restrict coords,
                                            int numcoords)
 {
-    int nblocks = numcoords / __BLOCKSIZE;
-    int nremaining = numcoords % __BLOCKSIZE;
+    int nblocks = numcoords / _BLOCKSIZE;
+    int nremaining = numcoords % _BLOCKSIZE;
     int nblocks_to_calloc = nblocks + (nremaining > 0);
     float* bcoords __attaligned = (float*) aligned_calloc( \
-                                  nblocks_to_calloc * __3_BLOCKSIZE, \
+                                  nblocks_to_calloc * _3_BLOCKSIZE, \
                                   sizeof(float));
     // process full blocks
 #ifdef PARALLEL
@@ -841,24 +840,24 @@ static inline float* _get_coords_in_blocks(const coordinate* restrict coords,
 #endif
     for (int i = 0; i < nblocks; i++) {
         for (int j = 0; j < 3; j++) {
-            float* _coords = ((float*) (coords + i * __BLOCKSIZE)) + j;
+            float* _coords = ((float*) (coords + i * _BLOCKSIZE)) + j;
             float* _bcoords = (float*) __assaligned(bcoords + \
-                                                     i * __3_BLOCKSIZE + \
-                                                     j * __BLOCKSIZE);
-            for (int k = 0; k < __BLOCKSIZE; k++) {
-                _bcoords[k] = _coords[3*k];
+                                                     i * _3_BLOCKSIZE + \
+                                                     j * _BLOCKSIZE);
+            for (int k = 0; k < _BLOCKSIZE; k++) {
+                _bcoords[k] = _coords[3 * k];
             }
         }
     }
     // process remaining partial block
     if (nremaining > 0) {
         for (int j = 0; j < 3; j++) {
-            float* _coords = ((float*) (coords + nblocks * __BLOCKSIZE)) + j;
+            float* _coords = ((float*) (coords + nblocks * _BLOCKSIZE)) + j;
             float* _bcoords = (float*) __assaligned(bcoords + \
-                                                    nblocks * __3_BLOCKSIZE + \
-                                                    j * __BLOCKSIZE);
+                                                    nblocks * _3_BLOCKSIZE + \
+                                                    j * _BLOCKSIZE);
             for (int k = 0; k < nremaining; k++) {
-                _bcoords[k] = _coords[3*k];
+                _bcoords[k] = _coords[3 * k];
             }
         }
     }
@@ -869,15 +868,14 @@ static inline float* _get_coords_in_blocks(const coordinate* restrict coords,
  * @brief Moves block-aligned coordinates into the central periodic image
  *
  * This function takes an array @p coords of @p numcoords block-aligned
- * positions as well as an array @p box containing the box edge lengths of a
+ * coordinates as well as an array @p box containing the box edge lengths of a
  * rectangular simulation box. Folds coordinates which lie outside the box back
  * into the box.
  */
 static void _ortho_pbc_vectorized(float* restrict coords, int numcoords,
                                   const float* box)
 {
-    const int nblocks = numcoords / __BLOCKSIZE + \
-                        ((numcoords % __BLOCKSIZE) > 0);
+    const int nblocks = numcoords / _BLOCKSIZE + ((numcoords % _BLOCKSIZE) > 0);
     float box_inverse[3];
     box_inverse[0] = ((box[0] > FLT_EPSILON) ?  1.0 / box[0] : 0.0);
     box_inverse[1] = ((box[1] > FLT_EPSILON) ?  1.0 / box[1] : 0.0);
@@ -890,7 +888,7 @@ static void _ortho_pbc_vectorized(float* restrict coords, int numcoords,
     #pragma omp parallel shared(coords)
 #endif
     {
-        float* s __attaligned = (float*) aligned_calloc(__BLOCKSIZE,
+        float* s __attaligned = (float*) aligned_calloc(_BLOCKSIZE,
                                                         sizeof(float));
         __memaligned float bx;
         __memaligned float ibx;
@@ -901,17 +899,17 @@ static void _ortho_pbc_vectorized(float* restrict coords, int numcoords,
             for (int i = 0; i < 3; i++) {
                 if (box[i] > FLT_EPSILON) {
                     float* _coords __attaligned = \
-                    (float*) __assaligned(coords + n * __3_BLOCKSIZE + \
-                                          i * __BLOCKSIZE);
+                    (float*) __assaligned(coords + n * _3_BLOCKSIZE + \
+                                          i * _BLOCKSIZE);
                     bx = box[i];
                     ibx = box_inverse[i];
-                    for (int j = 0; j < __BLOCKSIZE; j++) {
+                    for (int j = 0; j < _BLOCKSIZE; j++) {
                         s[j] = _coords[j] * ibx;
                     }
-                    for (int j = 0; j < __BLOCKSIZE; j++) {
+                    for (int j = 0; j < _BLOCKSIZE; j++) {
                         s[j] = floorf(s[j]);
                     }
-                    for (int j = 0; j < __BLOCKSIZE; j++) {
+                    for (int j = 0; j < _BLOCKSIZE; j++) {
                         _coords[j] -= bx * s[j];
                     }
                 }
@@ -921,14 +919,22 @@ static void _ortho_pbc_vectorized(float* restrict coords, int numcoords,
     }
 }
 
+/**
+ * @brief Moves block-aligned coordinates into the central periodic image
+ *
+ * This function takes an array @p coords of @p numcoords block-aligned
+ * coordinates as well as an array @p box_vectors containing the box vectors of
+ * a triclinic simulation box. Folds coordinates which lie outside the box back
+ * into the box.
+ */
 static void _triclinic_pbc_vectorized(float* restrict coords, int numcoords,
                                       const float* box_vectors)
 {
     // Moves all coordinates to within the box boundaries for a triclinic box
     // Assumes box_vectors having zero values for box_vectors[1], box_vectors[2]
     // and box_vectors[5]
-    const int nblocks = numcoords / __BLOCKSIZE + \
-                        ((numcoords % __BLOCKSIZE) > 0);
+    const int nblocks = numcoords / _BLOCKSIZE + \
+                        ((numcoords % _BLOCKSIZE) > 0);
     // Inverse bi of matrix box b (row-major indexing):
     //   [ 1/b0                      ,  0         , 0   ]
     //   [-b3/(b0*b4)                ,  1/b4      , 0   ]
@@ -950,7 +956,7 @@ static void _triclinic_pbc_vectorized(float* restrict coords, int numcoords,
     #pragma omp parallel shared(coords)
 #endif
     {
-        float* s __attaligned = (float*) aligned_calloc(__BLOCKSIZE,
+        float* s __attaligned = (float*) aligned_calloc(_BLOCKSIZE,
                                                         sizeof(float));
         __memaligned float bxv;
 #ifdef PARALLEL
@@ -958,63 +964,63 @@ static void _triclinic_pbc_vectorized(float* restrict coords, int numcoords,
 #endif
         for (int n = 0; n < nblocks; n++) {
             float* x_coords __attaligned = \
-            (float*) __assaligned(coords + n * __3_BLOCKSIZE);
+            (float*) __assaligned(coords + n * _3_BLOCKSIZE);
             float* y_coords __attaligned = \
-            (float*) __assaligned(coords + n * __3_BLOCKSIZE + __BLOCKSIZE);
+            (float*) __assaligned(coords + n * _3_BLOCKSIZE + _BLOCKSIZE);
             float* z_coords __attaligned = \
-            (float*) __assaligned(coords + n * __3_BLOCKSIZE + __2_BLOCKSIZE);
+            (float*) __assaligned(coords + n * _3_BLOCKSIZE + _2_BLOCKSIZE);
             // translate x-, y-, and z-coordinates to central cell along c-axis
-            for (int i = 0; i < __BLOCKSIZE; i++) {
+            for (int i = 0; i < _BLOCKSIZE; i++) {
                 s[i] = z_coords[i] * bi8;
             }
-            for (int i = 0; i < __BLOCKSIZE; i++) {
+            for (int i = 0; i < _BLOCKSIZE; i++) {
                 s[i] = floorf(s[i]);
             }
             bxv = box_vectors[6];
-            for (int i = 0; i < __BLOCKSIZE; i++) {
+            for (int i = 0; i < _BLOCKSIZE; i++) {
                 x_coords[i] -= s[i] * bxv;
             }
             bxv = box_vectors[7];
-            for (int i = 0; i < __BLOCKSIZE; i++) {
+            for (int i = 0; i < _BLOCKSIZE; i++) {
                 y_coords[i] -= s[i] * bxv;
             }
             bxv = box_vectors[8];
-            for (int i = 0; i < __BLOCKSIZE; i++) {
+            for (int i = 0; i < _BLOCKSIZE; i++) {
                 z_coords[i] -= s[i] * bxv;
             }
             // translate x- and y-coordinates to central cell along b-axis
-            for (int i = 0; i < __BLOCKSIZE; i++) {
+            for (int i = 0; i < _BLOCKSIZE; i++) {
                 s[i] = y_coords[i] * bi4;
             }
-            for (int i = 0; i < __BLOCKSIZE; i++) {
+            for (int i = 0; i < _BLOCKSIZE; i++) {
                 s[i] += z_coords[i] * bi7;
             }
-            for (int i = 0; i < __BLOCKSIZE; i++) {
+            for (int i = 0; i < _BLOCKSIZE; i++) {
                 s[i] = floorf(s[i]);
             }
             bxv = box_vectors[3];
-            for (int i = 0; i < __BLOCKSIZE; i++) {
+            for (int i = 0; i < _BLOCKSIZE; i++) {
                 x_coords[i] -= s[i] * bxv;
             }
             bxv = box_vectors[4];
-            for (int i = 0; i < __BLOCKSIZE; i++) {
+            for (int i = 0; i < _BLOCKSIZE; i++) {
                 y_coords[i] -= s[i] * bxv;
             }
             // translate x-coordinates to central cell along a-axis
-            for (int i = 0; i < __BLOCKSIZE; i++) {
+            for (int i = 0; i < _BLOCKSIZE; i++) {
                 s[i] = x_coords[i] * bi0;
             }
-            for (int i = 0; i < __BLOCKSIZE; i++) {
+            for (int i = 0; i < _BLOCKSIZE; i++) {
                 s[i] += y_coords[i] * bi3;
             }
-            for (int i = 0; i < __BLOCKSIZE; i++) {
+            for (int i = 0; i < _BLOCKSIZE; i++) {
                 s[i] += z_coords[i] * bi6;
             }
-            for (int i = 0; i < __BLOCKSIZE; i++) {
+            for (int i = 0; i < _BLOCKSIZE; i++) {
                 s[i] = floorf(s[i]);
             }
             bxv = box_vectors[0];
-            for (int i = 0; i < __BLOCKSIZE; i++) {
+            for (int i = 0; i < _BLOCKSIZE; i++) {
                 x_coords[i] -= s[i] * bxv;
             }
         }
@@ -1023,13 +1029,13 @@ static void _triclinic_pbc_vectorized(float* restrict coords, int numcoords,
 }
 
 /**
- * @brief Computes all distances within a block of @c __BLOCKSIZE positions
+ * @brief Computes all distances within a block of @c _BLOCKSIZE positions
  *
- * This function takes an array @p refs of @c __BLOCKSIZE block-aligned
- * positions and computes all @<__BLOCKSIZE * __BLOCKSIZE@> pairwise distance
+ * This function takes an array @p refs of @c _BLOCKSIZE block-aligned
+ * positions and computes all @<_BLOCKSIZE * _BLOCKSIZE@> pairwise distance
  * vectors, which are stored in the provided @p dxs array.
  * When SIMD-vectorized by the compiler, this routine should be faster than
- * computing only the unique @<__BLOCKSIZE * (__BLOCKSIZE - 1) / 2@> distances.
+ * computing only the unique @<_BLOCKSIZE * (_BLOCKSIZE - 1) / 2@> distances.
  */
 static inline void _calc_self_distance_vectors_block(double* restrict dxs,
                                                      const float* restrict refs)
@@ -1037,12 +1043,12 @@ static inline void _calc_self_distance_vectors_block(double* restrict dxs,
     dxs = (double*) __assaligned(dxs);
     refs = (float*) __assaligned(refs);
     for (int i = 0; i < 3; i++) {
-        for (int j = 0; j < __BLOCKSIZE; j++) {
-            double* _dxs = (double*) __assaligned(dxs + i * __BLOCKSIZE_2 + \
-                                                  j * __BLOCKSIZE);
-            float* _refs = (float*) __assaligned(refs + i * __BLOCKSIZE);
-            __memaligned float _ref = refs[i*__BLOCKSIZE+j];
-            for (int k = 0; k < __BLOCKSIZE; k++) {
+        for (int j = 0; j < _BLOCKSIZE; j++) {
+            double* _dxs = (double*) __assaligned(dxs + i * _BLOCKSIZE_2 + \
+                                                  j * _BLOCKSIZE);
+            float* _refs = (float*) __assaligned(refs + i * _BLOCKSIZE);
+            __memaligned float _ref = refs[i * _BLOCKSIZE + j];
+            for (int k = 0; k < _BLOCKSIZE; k++) {
                 _dxs[k] = _refs[k] - _ref;
             }
         }
@@ -1050,11 +1056,11 @@ static inline void _calc_self_distance_vectors_block(double* restrict dxs,
 }
 
 /**
- * @brief Computes all distances between two blocks of @c __BLOCKSIZE positions
+ * @brief Computes all distances between two blocks of @c _BLOCKSIZE positions
  *
  * This function takes two arrays @p refs and @p confs, each containing
- * @c __BLOCKSIZE block-aligned positions. It computes all
- * @<__BLOCKSIZE * __BLOCKSIZE@> pairwise distance vectors between the two
+ * @c _BLOCKSIZE block-aligned positions. It computes all
+ * @<_BLOCKSIZE * _BLOCKSIZE@> pairwise distance vectors between the two
  * arrays, which are stored in the provided @p dxs array.
  */
 static inline void _calc_distance_vectors_block(double* restrict dxs,
@@ -1065,12 +1071,12 @@ static inline void _calc_distance_vectors_block(double* restrict dxs,
     refs = (float*) __assaligned(refs);
     confs = (float*) __assaligned(confs);
     for (int i = 0; i < 3; i++) {
-        for (int j = 0; j < __BLOCKSIZE; j++) {
-            double* _dxs = (double*) __assaligned(dxs + i * __BLOCKSIZE_2 + \
-                                                  j * __BLOCKSIZE);
-            float* _confs = (float*) __assaligned(confs + i * __BLOCKSIZE);
-            __memaligned float _ref = refs[i*__BLOCKSIZE+j];
-            for (int k = 0; k < __BLOCKSIZE; k++) {
+        for (int j = 0; j < _BLOCKSIZE; j++) {
+            double* _dxs = (double*) __assaligned(dxs + i * _BLOCKSIZE_2 + \
+                                                  j * _BLOCKSIZE);
+            float* _confs = (float*) __assaligned(confs + i * _BLOCKSIZE);
+            __memaligned float _ref = refs[i * _BLOCKSIZE + j];
+            for (int k = 0; k < _BLOCKSIZE; k++) {
                 _dxs[k] = _confs[k] - _ref;
             }
         }
@@ -1080,7 +1086,7 @@ static inline void _calc_distance_vectors_block(double* restrict dxs,
 /**
  * @brief Compute minimum image representations of distance vectors
  *
- * This function takes an array @p dxs containing @<__BLOCKSIZE * __BLOCKSIZE@>
+ * This function takes an array @p dxs containing @<_BLOCKSIZE * _BLOCKSIZE@>
  * distance vectors, an array @p box containing the box edge lengths of a
  * rectangular simulation box, and an array @p half_box containing the respective
  * half box edge lengths. It applies the minimum image convention on the
@@ -1099,11 +1105,11 @@ static inline void _minimum_image_ortho_lazy_block(double* restrict dxs,
             bx = box[i];
             hbx = half_box[i];
             nhbx = -half_box[i];
-            double* _dxs = (double*) __assaligned(dxs + i * __BLOCKSIZE_2);
-            for (int j = 0; j < __BLOCKSIZE_2; j++) {
+            double* _dxs = (double*) __assaligned(dxs + i * _BLOCKSIZE_2);
+            for (int j = 0; j < _BLOCKSIZE_2; j++) {
                 _dxs[j] -= ((_dxs[j] > hbx) ? bx : 0.0);
             }
-            for (int j = 0; j < __BLOCKSIZE_2; j++) {
+            for (int j = 0; j < _BLOCKSIZE_2; j++) {
                 _dxs[j] += ((_dxs[j] <= nhbx) ? bx : 0.0);
             }
         }
@@ -1113,13 +1119,13 @@ static inline void _minimum_image_ortho_lazy_block(double* restrict dxs,
 /**
  * @brief Compute minimum image representations of distance vectors
  *
- * This function takes an array @p dxs containing @<__BLOCKSIZE * __BLOCKSIZE@>
+ * This function takes an array @p dxs containing @<_BLOCKSIZE * _BLOCKSIZE@>
  * distance vectors, an array @p box_vectors containing the box vectors of
  * a triclinic simulation box. It applies the minimum image convention on the
  * distance vectors with respect to the box.
  * The parameter @p aux serves as a container to store intermediate values and
- * must provide enough space to store 11 * __BLOCKSIZE ^ 2 doubles (for
- * __BLOCKSIZE = 32 and sizeof(double) = 8 bytes that's exactly 88 kiB).
+ * must provide enough space to store 11 * _BLOCKSIZE ^ 2 doubles (for
+ * _BLOCKSIZE = 32 and sizeof(double) = 8 bytes that's exactly 88 kiB).
  * This avoids repeated memory allocations if the function is called in a loop.
  */
 static inline void _minimum_image_triclinic_lazy_block(double* restrict dxs,
@@ -1127,24 +1133,24 @@ static inline void _minimum_image_triclinic_lazy_block(double* restrict dxs,
                                                        double* restrict aux)
 {
     // pointers to x-, y-, and z-coordinates of distances:
-    double* dx_0 __attaligned = (double*) __assaligned(dxs + 0 * __BLOCKSIZE_2);
-    double* dx_1 __attaligned = (double*) __assaligned(dxs + 1 * __BLOCKSIZE_2);
-    double* dx_2 __attaligned = (double*) __assaligned(dxs + 2 * __BLOCKSIZE_2);
+    double* dx_0 __attaligned = (double*) __assaligned(dxs + 0 * _BLOCKSIZE_2);
+    double* dx_1 __attaligned = (double*) __assaligned(dxs + 1 * _BLOCKSIZE_2);
+    double* dx_2 __attaligned = (double*) __assaligned(dxs + 2 * _BLOCKSIZE_2);
     // pointers for auxiliary arrays:
-    double* rx_0 __attaligned = (double*) __assaligned(aux + 0 * __BLOCKSIZE_2);
-    double* ry_0 __attaligned = (double*) __assaligned(aux + 1 * __BLOCKSIZE_2);
-    double* ry_1 __attaligned = (double*) __assaligned(aux + 2 * __BLOCKSIZE_2);
-    double* rz_0 __attaligned = (double*) __assaligned(aux + 3 * __BLOCKSIZE_2);
-    double* rz_1 __attaligned = (double*) __assaligned(aux + 4 * __BLOCKSIZE_2);
-    double* rz_2 __attaligned = (double*) __assaligned(aux + 5 * __BLOCKSIZE_2);
-    double* d    __attaligned = (double*) __assaligned(aux + 6 * __BLOCKSIZE_2);
-    double* min  __attaligned = (double*) __assaligned(aux + 7 * __BLOCKSIZE_2);
+    double* rx_0 __attaligned = (double*) __assaligned(aux + 0 * _BLOCKSIZE_2);
+    double* ry_0 __attaligned = (double*) __assaligned(aux + 1 * _BLOCKSIZE_2);
+    double* ry_1 __attaligned = (double*) __assaligned(aux + 2 * _BLOCKSIZE_2);
+    double* rz_0 __attaligned = (double*) __assaligned(aux + 3 * _BLOCKSIZE_2);
+    double* rz_1 __attaligned = (double*) __assaligned(aux + 4 * _BLOCKSIZE_2);
+    double* rz_2 __attaligned = (double*) __assaligned(aux + 5 * _BLOCKSIZE_2);
+    double* d    __attaligned = (double*) __assaligned(aux + 6 * _BLOCKSIZE_2);
+    double* min  __attaligned = (double*) __assaligned(aux + 7 * _BLOCKSIZE_2);
     double* dmin_0 __attaligned = (double*) __assaligned(aux + \
-                                                             8 * __BLOCKSIZE_2);
+                                                             8 * _BLOCKSIZE_2);
     double* dmin_1 __attaligned = (double*) __assaligned(aux + \
-                                                             9 * __BLOCKSIZE_2);
+                                                             9 * _BLOCKSIZE_2);
     double* dmin_2 __attaligned = (double*) __assaligned(aux + \
-                                                            10 * __BLOCKSIZE_2);
+                                                            10 * _BLOCKSIZE_2);
     // auxiliary variables:
     __memaligned double xb0;
     __memaligned double yb3;
@@ -1154,63 +1160,63 @@ static inline void _minimum_image_triclinic_lazy_block(double* restrict dxs,
     __memaligned double zb8;
     // initialize min, dmin_0, dmin_1, and dmin_2 in a single loop:
     __memaligned double flt_max = FLT_MAX;
-    for (int i = 0; i < 4 * __BLOCKSIZE_2; i++) {
+    for (int i = 0; i < 4 * _BLOCKSIZE_2; i++) {
         min[i] = flt_max;
     }
     // now do the actual minimum image computation:
     for (int x = -1; x < 2; x++) {
         xb0 = x * box_vectors[0];
-        for(int i = 0; i < __BLOCKSIZE_2; i++) {
+        for (int i = 0; i < _BLOCKSIZE_2; i++) {
             rx_0[i] = dx_0[i] + xb0;
         }
         for (int y = -1; y < 2; y++) {
             yb3 = y * box_vectors[3];
             yb4 = y * box_vectors[4];
-            for(int i = 0; i < __BLOCKSIZE_2; i++) {
+            for (int i = 0; i < _BLOCKSIZE_2; i++) {
                 ry_0[i] = rx_0[i] + yb3;
             }
-            for(int i = 0; i < __BLOCKSIZE_2; i++) {
+            for (int i = 0; i < _BLOCKSIZE_2; i++) {
                 ry_1[i] = dx_1[i] + yb4;
             }
             for (int z = -1; z < 2; z++) {
                 zb6 = z * box_vectors[6];
                 zb7 = z * box_vectors[7];
                 zb8 = z * box_vectors[8];
-                for(int i = 0; i < __BLOCKSIZE_2; i++) {
+                for (int i = 0; i < _BLOCKSIZE_2; i++) {
                     rz_0[i] = ry_0[i] + zb6;
                 }
-                for(int i = 0; i < __BLOCKSIZE_2; i++) {
+                for (int i = 0; i < _BLOCKSIZE_2; i++) {
                     rz_1[i] = ry_1[i] + zb7;
                 }
-                for(int i = 0; i < __BLOCKSIZE_2; i++) {
+                for (int i = 0; i < _BLOCKSIZE_2; i++) {
                     rz_2[i] = dx_2[i] + zb8;
                 }
-                for(int i = 0; i < __BLOCKSIZE_2; i++) {
+                for (int i = 0; i < _BLOCKSIZE_2; i++) {
                     d[i] = rz_0[i] * rz_0[i];
                 }
-                for(int i = 0; i < __BLOCKSIZE_2; i++) {
+                for (int i = 0; i < _BLOCKSIZE_2; i++) {
                     d[i] += rz_1[i] * rz_1[i];
                 }
-                for(int i = 0; i < __BLOCKSIZE_2; i++) {
+                for (int i = 0; i < _BLOCKSIZE_2; i++) {
                     d[i] += rz_2[i] * rz_2[i];
                 }
-                for(int i = 0; i < __BLOCKSIZE_2; i++) {
+                for (int i = 0; i < _BLOCKSIZE_2; i++) {
                     dmin_0[i] = ((d[i] < min[i]) ? rz_0[i] : dmin_0[i]);
                 }
-                for(int i = 0; i < __BLOCKSIZE_2; i++) {
+                for (int i = 0; i < _BLOCKSIZE_2; i++) {
                     dmin_1[i] = ((d[i] < min[i]) ? rz_1[i] : dmin_1[i]);
                 }
-                for(int i = 0; i < __BLOCKSIZE_2; i++) {
+                for (int i = 0; i < _BLOCKSIZE_2; i++) {
                     dmin_2[i] = ((d[i] < min[i]) ? rz_2[i] : dmin_2[i]);
                 }
-                for(int i = 0; i < __BLOCKSIZE_2; i++) {
+                for (int i = 0; i < _BLOCKSIZE_2; i++) {
                     min[i] = ((d[i] < min[i]) ? d[i] : min[i]);
                 }
             }
         }
     }
     dxs = (double*) __assaligned(dxs);
-    for(int i = 0; i < __3_BLOCKSIZE_2; i++) {
+    for (int i = 0; i < _3_BLOCKSIZE_2; i++) {
         dxs[i] = dmin_0[i];
     }
 }
@@ -1218,7 +1224,7 @@ static inline void _minimum_image_triclinic_lazy_block(double* restrict dxs,
 /**
  * @brief Compute squared distances from distance vectors
  *
- * This function takes an array @p dxs containing @<__BLOCKSIZE * __BLOCKSIZE@>
+ * This function takes an array @p dxs containing @<_BLOCKSIZE * _BLOCKSIZE@>
  * distance vectors and computes their squared Euclidean norms, which are
  * stored in the provided @p r2s array.
  */
@@ -1226,12 +1232,12 @@ static inline void _calc_squared_distances_block(double* restrict r2s,
                                                  const double* restrict dxs)
 {
     r2s = (double*) __assaligned(r2s);
-    r2s = (double*) memset((void*) r2s, 0, __BLOCKSIZE_2 * sizeof(double));
+    r2s = (double*) memset((void*) r2s, 0, _BLOCKSIZE_2 * sizeof(double));
     for (int i = 0; i < 3; i++) {
         double* _dxs __attaligned = (double*) __assaligned(dxs + \
-                                                           i * __BLOCKSIZE_2);
+                                                           i * _BLOCKSIZE_2);
         double* _r2s __attaligned = (double*) __assaligned(r2s);
-        for (int j = 0; j < __BLOCKSIZE_2; j++) {
+        for (int j = 0; j < _BLOCKSIZE_2; j++) {
             _r2s[j] += _dxs[j] * _dxs[j];
         }
     }
@@ -1244,10 +1250,10 @@ static void _calc_distance_array_vectorized(const coordinate* restrict ref,
                                             const float* box, ePBC pbc_type,
                                             double* restrict distances)
 {
-    const int nblocks_ref = numref / __BLOCKSIZE;
-    const int nblocks_conf = numconf / __BLOCKSIZE;
-    const int partial_block_size_ref = numref % __BLOCKSIZE;
-    const int partial_block_size_conf = numconf % __BLOCKSIZE;
+    const int nblocks_ref = numref / _BLOCKSIZE;
+    const int nblocks_conf = numconf / _BLOCKSIZE;
+    const int partial_block_size_ref = numref % _BLOCKSIZE;
+    const int partial_block_size_conf = numconf % _BLOCKSIZE;
     float* bref = _get_coords_in_blocks(ref, numref);
     float* bconf = _get_coords_in_blocks(conf, numconf);
     float half_box[3] = {0.0};
@@ -1272,21 +1278,21 @@ static void _calc_distance_array_vectorized(const coordinate* restrict ref,
     #pragma omp parallel shared(distances)
 #endif
     {
-        double* dxs = (double*) aligned_calloc(__3_BLOCKSIZE_2, sizeof(double));
-        double* r2s = (double*) aligned_calloc(__BLOCKSIZE_2, sizeof(double));
+        double* dxs = (double*) aligned_calloc(_3_BLOCKSIZE_2, sizeof(double));
+        double* r2s = (double*) aligned_calloc(_BLOCKSIZE_2, sizeof(double));
         double* aux = NULL;
         if (pbc_type == PBCtriclinic) {
-            aux = (double*) aligned_calloc(11 * __BLOCKSIZE_2, sizeof(double));
+            aux = (double*) aligned_calloc(11 * _BLOCKSIZE_2, sizeof(double));
         }
 #ifdef PARALLEL
         #pragma omp for schedule(static, 1) nowait
 #endif
         for (int n = 0; n < nblocks_ref; n++) {
             // process blocks of the n-th row
-            // (__BLOCKSIZE x __BLOCKSIZE squares):
+            // (_BLOCKSIZE x _BLOCKSIZE squares):
             for (int m = 0; m < nblocks_conf; m++) {
-                _calc_distance_vectors_block(dxs, bref + n * __3_BLOCKSIZE,
-                                             bconf + m * __3_BLOCKSIZE);
+                _calc_distance_vectors_block(dxs, bref + n * _3_BLOCKSIZE,
+                                             bconf + m * _3_BLOCKSIZE);
                 switch (pbc_type) {
                     case PBCortho:
                         _minimum_image_ortho_lazy_block(dxs, box, half_box);
@@ -1298,19 +1304,19 @@ static void _calc_distance_array_vectorized(const coordinate* restrict ref,
                         break;
                 };
                 _calc_squared_distances_block(r2s, dxs);
-                double* _dists = distances + __BLOCKSIZE * (n * numconf + m);
-                for (int i = 0; i < __BLOCKSIZE; i++) {
-                    for (int j = 0; j < __BLOCKSIZE; j++) {
-                        _dists[i*numconf+j] = sqrt(r2s[i*__BLOCKSIZE+j]);
+                double* _dists = distances + _BLOCKSIZE * (n * numconf + m);
+                for (int i = 0; i < _BLOCKSIZE; i++) {
+                    for (int j = 0; j < _BLOCKSIZE; j++) {
+                        _dists[i * numconf + j] = sqrt(r2s[i * _BLOCKSIZE + j]);
                     }
                 }
             }
             // process the remaining partial block of the n-th row
-            // (__BLOCKSIZE x partial_block_size_conf rectangles):
+            // (_BLOCKSIZE x partial_block_size_conf rectangles):
             if (partial_block_size_conf > 0){
-                _calc_distance_vectors_block(dxs, bref + n * __3_BLOCKSIZE,
+                _calc_distance_vectors_block(dxs, bref + n * _3_BLOCKSIZE,
                                              bconf + nblocks_conf * \
-                                             __3_BLOCKSIZE);
+                                             _3_BLOCKSIZE);
                 switch (pbc_type) {
                     case PBCortho:
                         _minimum_image_ortho_lazy_block(dxs, box, half_box);
@@ -1323,24 +1329,24 @@ static void _calc_distance_array_vectorized(const coordinate* restrict ref,
                 };
                 _calc_squared_distances_block(r2s, dxs);
                 double* _dists = distances + \
-                                 __BLOCKSIZE * (n * numconf + nblocks_conf);
-                for (int i = 0; i < __BLOCKSIZE; i++) {
+                                 _BLOCKSIZE * (n * numconf + nblocks_conf);
+                for (int i = 0; i < _BLOCKSIZE; i++) {
                     for (int j = 0; j < partial_block_size_conf; j++) {
-                        _dists[i*numconf+j] = sqrt(r2s[i*__BLOCKSIZE+j]);
+                        _dists[i * numconf + j] = sqrt(r2s[i * _BLOCKSIZE + j]);
                     }
                 }
             }
         }
         // process remaining partial blocks after the last row
-        // (partial_block_size_ref x __BLOCKSIZE rectangles):
+        // (partial_block_size_ref x _BLOCKSIZE rectangles):
         if (partial_block_size_ref > 0){
 #ifdef PARALLEL
             #pragma omp for schedule(static, 1) nowait
 #endif
             for (int m = 0; m < nblocks_conf; m++) {
                 _calc_distance_vectors_block(dxs,
-                                             bref + nblocks_ref * __3_BLOCKSIZE,
-                                             bconf + m * __3_BLOCKSIZE);
+                                             bref + nblocks_ref * _3_BLOCKSIZE,
+                                             bconf + m * _3_BLOCKSIZE);
                 switch (pbc_type) {
                     case PBCortho:
                         _minimum_image_ortho_lazy_block(dxs, box, half_box);
@@ -1353,10 +1359,10 @@ static void _calc_distance_array_vectorized(const coordinate* restrict ref,
                 };
                 _calc_squared_distances_block(r2s, dxs);
                 double* _dists = distances + \
-                                 __BLOCKSIZE * (nblocks_ref * numconf + m);
+                                 _BLOCKSIZE * (nblocks_ref * numconf + m);
                 for (int i = 0; i < partial_block_size_ref; i++) {
-                    for (int j=0; j<__BLOCKSIZE; j++) {
-                        _dists[i*numconf+j] = sqrt(r2s[i*__BLOCKSIZE+j]);
+                    for (int j = 0; j < _BLOCKSIZE; j++) {
+                        _dists[i * numconf + j] = sqrt(r2s[i * _BLOCKSIZE + j]);
                     }
                 }
             }
@@ -1368,17 +1374,17 @@ static void _calc_distance_array_vectorized(const coordinate* restrict ref,
     // process remaining bottom-right partial block
     // (partial_block_size_ref x partial_block_size_conf rectangle):
     if (partial_block_size_ref * partial_block_size_conf > 0) {
-        double* dxs = (double*) aligned_calloc(__3_BLOCKSIZE_2, sizeof(double));
-        double* r2s = (double*) aligned_calloc(__BLOCKSIZE_2, sizeof(double));
-        _calc_distance_vectors_block(dxs, bref + nblocks_ref * __3_BLOCKSIZE,
-                                     bconf + nblocks_conf * __3_BLOCKSIZE);
+        double* dxs = (double*) aligned_calloc(_3_BLOCKSIZE_2, sizeof(double));
+        double* r2s = (double*) aligned_calloc(_BLOCKSIZE_2, sizeof(double));
+        _calc_distance_vectors_block(dxs, bref + nblocks_ref * _3_BLOCKSIZE,
+                                     bconf + nblocks_conf * _3_BLOCKSIZE);
         switch (pbc_type) {
             case PBCortho:
                 _minimum_image_ortho_lazy_block(dxs, box, half_box);
                 break;
             case PBCtriclinic:
                 {
-                    double* aux = (double*) aligned_calloc(11 * __BLOCKSIZE_2,
+                    double* aux = (double*) aligned_calloc(11 * _BLOCKSIZE_2,
                                                            sizeof(double));
                     _minimum_image_triclinic_lazy_block(dxs, box, aux);
                     free(aux);
@@ -1389,10 +1395,10 @@ static void _calc_distance_array_vectorized(const coordinate* restrict ref,
         };
         _calc_squared_distances_block(r2s, dxs);
         double* _dists = distances + \
-                         __BLOCKSIZE * (nblocks_ref * numconf + nblocks_conf);
-        for (int i=0; i<partial_block_size_ref; i++) {
-            for (int j=0; j<partial_block_size_conf; j++) {
-                _dists[i*numconf+j] = sqrt(r2s[i*__BLOCKSIZE+j]);
+                         _BLOCKSIZE * (nblocks_ref * numconf + nblocks_conf);
+        for (int i = 0; i < partial_block_size_ref; i++) {
+            for (int j = 0; j < partial_block_size_conf; j++) {
+                _dists[i * numconf + j] = sqrt(r2s[i * _BLOCKSIZE + j]);
             }
         }
         free(dxs);
@@ -1408,8 +1414,8 @@ static void _calc_self_distance_array_vectorized(const coordinate* restrict ref,
                                                  ePBC pbc_type,
                                                  double* restrict distances)
 {
-    const int nblocks = numref / __BLOCKSIZE;
-    const int partial_block_size = numref % __BLOCKSIZE;
+    const int nblocks = numref / _BLOCKSIZE;
+    const int partial_block_size = numref % _BLOCKSIZE;
     float* bref = _get_coords_in_blocks(ref, numref);
     float half_box[3] = {0.0};
 
@@ -1430,19 +1436,19 @@ static void _calc_self_distance_array_vectorized(const coordinate* restrict ref,
     #pragma omp parallel
 #endif
     {
-        double* dxs = (double*) aligned_calloc(__3_BLOCKSIZE_2, sizeof(double));
-        double* r2s = (double*) aligned_calloc(__BLOCKSIZE_2, sizeof(double));
+        double* dxs = (double*) aligned_calloc(_3_BLOCKSIZE_2, sizeof(double));
+        double* r2s = (double*) aligned_calloc(_BLOCKSIZE_2, sizeof(double));
         double* aux = NULL;
         if (pbc_type == PBCtriclinic) {
-            aux = (double*) aligned_calloc(11 * __BLOCKSIZE_2, sizeof(double));
+            aux = (double*) aligned_calloc(11 * _BLOCKSIZE_2, sizeof(double));
         }
 #ifdef PARALLEL
         #pragma omp for schedule(dynamic, 1) nowait
 #endif
-        for (int n=0; n<nblocks; n++) {
+        for (int n = 0; n < nblocks; n++) {
             // process first block of the n-th row
-            // ((__BLOCKSIZE - 1) x (__BLOCKSIZE - 1) triangle):
-            _calc_self_distance_vectors_block(dxs, bref + n * __3_BLOCKSIZE);
+            // ((_BLOCKSIZE - 1) x (_BLOCKSIZE - 1) triangle):
+            _calc_self_distance_vectors_block(dxs, bref + n * _3_BLOCKSIZE);
             switch (pbc_type) {
                 case PBCortho:
                     _minimum_image_ortho_lazy_block(dxs, box, half_box);
@@ -1454,21 +1460,21 @@ static void _calc_self_distance_array_vectorized(const coordinate* restrict ref,
                     break;
             };
             _calc_squared_distances_block(r2s, dxs);
-            double* _distances = distances + n * (numref * __BLOCKSIZE - \
-                                 (n * __BLOCKSIZE_2 + __BLOCKSIZE) / 2);
-            for (int i=0; i<__BLOCKSIZE-1; i++) {
+            double* _distances = distances + n * (numref * _BLOCKSIZE - \
+                                 (n * _BLOCKSIZE_2 + _BLOCKSIZE) / 2);
+            for (int i = 0; i < _BLOCKSIZE - 1; i++) {
                 double* __distances = _distances + \
-                                      i * (numref - n * __BLOCKSIZE) - \
+                                      i * (numref - n * _BLOCKSIZE) - \
                                       (i + 1) * (i + 2) / 2;
-                for (int j=i+1; j<__BLOCKSIZE; j++) {
-                    __distances[j] = sqrt(r2s[i*__BLOCKSIZE+j]);
+                for (int j = i + 1; j < _BLOCKSIZE; j++) {
+                    __distances[j] = sqrt(r2s[i * _BLOCKSIZE + j]);
                 }
             }
             // process the remaining blocks of the n-th row
-            // (__BLOCKSIZE x __BLOCKSIZE squares):
-            for (int m=n+1; m<nblocks; m++){
-                _calc_distance_vectors_block(dxs, bref + n * __3_BLOCKSIZE,
-                                             bref + m * __3_BLOCKSIZE);
+            // (_BLOCKSIZE x _BLOCKSIZE squares):
+            for (int m = n + 1; m < nblocks; m++){
+                _calc_distance_vectors_block(dxs, bref + n * _3_BLOCKSIZE,
+                                             bref + m * _3_BLOCKSIZE);
                 switch (pbc_type) {
                     case PBCortho:
                         _minimum_image_ortho_lazy_block(dxs, box, half_box);
@@ -1480,21 +1486,21 @@ static void _calc_self_distance_array_vectorized(const coordinate* restrict ref,
                         break;
                 };
                 _calc_squared_distances_block(r2s, dxs);
-                _distances += __BLOCKSIZE;
-                for (int i=0; i<__BLOCKSIZE; i++) {
+                _distances += _BLOCKSIZE;
+                for (int i = 0; i < _BLOCKSIZE; i++) {
                     double* __distances = _distances + \
-                                          i * (numref - n * __BLOCKSIZE) - \
+                                          i * (numref - n * _BLOCKSIZE) - \
                                           (i + 1) * (i + 2) / 2;
-                    for (int j=0; j<__BLOCKSIZE; j++) {
-                        __distances[j] = sqrt(r2s[i*__BLOCKSIZE+j]);
+                    for (int j = 0; j < _BLOCKSIZE; j++) {
+                        __distances[j] = sqrt(r2s[i * _BLOCKSIZE + j]);
                     }
                 }
             }
             // process the remaining partial block of the n-th row
-            // (__BLOCKSIZE x partial_block_size rectangle):
+            // (_BLOCKSIZE x partial_block_size rectangle):
             if (partial_block_size > 0){
-                _calc_distance_vectors_block(dxs, bref + n * __3_BLOCKSIZE,
-                                             bref + nblocks * __3_BLOCKSIZE);
+                _calc_distance_vectors_block(dxs, bref + n * _3_BLOCKSIZE,
+                                             bref + nblocks * _3_BLOCKSIZE);
                 switch (pbc_type) {
                     case PBCortho:
                         _minimum_image_ortho_lazy_block(dxs, box, half_box);
@@ -1506,13 +1512,13 @@ static void _calc_self_distance_array_vectorized(const coordinate* restrict ref,
                         break;
                 };
                 _calc_squared_distances_block(r2s, dxs);
-                _distances += __BLOCKSIZE;
-                for (int i=0; i<__BLOCKSIZE; i++) {
+                _distances += _BLOCKSIZE;
+                for (int i = 0; i < _BLOCKSIZE; i++) {
                     double* __distances = _distances + \
-                                          i * (numref - n * __BLOCKSIZE) - \
+                                          i * (numref - n * _BLOCKSIZE) - \
                                           (i + 1) * (i + 2) / 2;
-                    for (int j=0; j<partial_block_size; j++) {
-                        __distances[j] = sqrt(r2s[i*__BLOCKSIZE+j]);
+                    for (int j = 0; j < partial_block_size; j++) {
+                        __distances[j] = sqrt(r2s[i * _BLOCKSIZE + j]);
                     }
                 }
             }
@@ -1524,16 +1530,16 @@ static void _calc_self_distance_array_vectorized(const coordinate* restrict ref,
     // process remaining bottom-right partial block:
     // ((partial_block_size - 1) x (partial_block_size - 1) triangle):
     if (partial_block_size > 0) {
-        double* dxs = (double*) aligned_calloc(__3_BLOCKSIZE_2, sizeof(double));
-        double* r2s = (double*) aligned_calloc(__BLOCKSIZE_2, sizeof(double));
-        _calc_self_distance_vectors_block(dxs, bref + nblocks * __3_BLOCKSIZE);
+        double* dxs = (double*) aligned_calloc(_3_BLOCKSIZE_2, sizeof(double));
+        double* r2s = (double*) aligned_calloc(_BLOCKSIZE_2, sizeof(double));
+        _calc_self_distance_vectors_block(dxs, bref + nblocks * _3_BLOCKSIZE);
         switch (pbc_type) {
             case PBCortho:
                 _minimum_image_ortho_lazy_block(dxs, box, half_box);
                 break;
             case PBCtriclinic:
                 {
-                    double* aux = (double*) aligned_calloc(11 * __BLOCKSIZE_2,
+                    double* aux = (double*) aligned_calloc(11 * _BLOCKSIZE_2,
                                                            sizeof(double));
                     _minimum_image_triclinic_lazy_block(dxs, box, aux);
                     free(aux);
@@ -1543,14 +1549,14 @@ static void _calc_self_distance_array_vectorized(const coordinate* restrict ref,
                 break;
         };
         _calc_squared_distances_block(r2s, dxs);
-        double * _distances = distances + nblocks * (numref * __BLOCKSIZE - \
-                              (nblocks * __BLOCKSIZE_2 + __BLOCKSIZE) / 2);
-        for (int i=0; i<partial_block_size-1; i++) {
+        double * _distances = distances + nblocks * (numref * _BLOCKSIZE - \
+                              (nblocks * _BLOCKSIZE_2 + _BLOCKSIZE) / 2);
+        for (int i = 0; i < partial_block_size - 1; i++) {
             double* __distances = _distances + \
-                                  i * (numref - nblocks * __BLOCKSIZE) - \
+                                  i * (numref - nblocks * _BLOCKSIZE) - \
                                   (i + 1) * (i + 2) / 2;
-            for (int j=i+1; j<partial_block_size; j++) {
-                __distances[j] = sqrt(r2s[i*__BLOCKSIZE+j]);
+            for (int j = i + 1; j < partial_block_size; j++) {
+                __distances[j] = sqrt(r2s[i * _BLOCKSIZE + j]);
             }
         }
         free(dxs);
@@ -1570,10 +1576,10 @@ static void _calc_distance_histogram_vectorized(const coordinate* restrict ref,
 {
     double inverse_binw = 1.0 / binw;
     double r2_max = (binw * numhisto) * (binw * numhisto);
-    const int nblocks_ref = numref / __BLOCKSIZE;
-    const int nblocks_conf = numconf / __BLOCKSIZE;
-    const int partial_block_size_ref = numref % __BLOCKSIZE;
-    const int partial_block_size_conf = numconf % __BLOCKSIZE;
+    const int nblocks_ref = numref / _BLOCKSIZE;
+    const int nblocks_conf = numconf / _BLOCKSIZE;
+    const int partial_block_size_ref = numref % _BLOCKSIZE;
+    const int partial_block_size_conf = numconf % _BLOCKSIZE;
     float* bref = _get_coords_in_blocks(ref, numref);
     float* bconf = _get_coords_in_blocks(conf, numconf);
     float half_box[3] = {0.0};
@@ -1600,22 +1606,22 @@ static void _calc_distance_histogram_vectorized(const coordinate* restrict ref,
         histbin* thread_local_histo = \
         (histbin*) aligned_calloc(numhisto + 1, sizeof(histbin));
 #endif
-        double* dxs = (double*) aligned_calloc(__3_BLOCKSIZE_2, sizeof(double));
-        double* r2s = (double*) aligned_calloc(__BLOCKSIZE_2, sizeof(double));
+        double* dxs = (double*) aligned_calloc(_3_BLOCKSIZE_2, sizeof(double));
+        double* r2s = (double*) aligned_calloc(_BLOCKSIZE_2, sizeof(double));
         double* aux = NULL;
+        int k;
         if (pbc_type == PBCtriclinic) {
-            aux = (double*) aligned_calloc(11 * __BLOCKSIZE_2, sizeof(double));
+            aux = (double*) aligned_calloc(11 * _BLOCKSIZE_2, sizeof(double));
         }
 #ifdef PARALLEL
         #pragma omp for schedule(static, 1) nowait
 #endif
-        for (int n=0; n<nblocks_ref; n++) {
-            int k;
+        for (int n = 0; n < nblocks_ref; n++) {
             // process blocks of the n-th row
-            // (__BLOCKSIZE x __BLOCKSIZE squares):
-            for (int m=0; m<nblocks_conf; m++) {
-                _calc_distance_vectors_block(dxs, bref + n * __3_BLOCKSIZE,
-                                             bconf + m * __3_BLOCKSIZE);
+            // (_BLOCKSIZE x _BLOCKSIZE squares):
+            for (int m = 0; m < nblocks_conf; m++) {
+                _calc_distance_vectors_block(dxs, bref + n * _3_BLOCKSIZE,
+                                             bconf + m * _3_BLOCKSIZE);
                 switch (pbc_type) {
                     case PBCortho:
                         _minimum_image_ortho_lazy_block(dxs, box, half_box);
@@ -1627,7 +1633,7 @@ static void _calc_distance_histogram_vectorized(const coordinate* restrict ref,
                         break;
                 };
                 _calc_squared_distances_block(r2s, dxs);
-                for (int i=0; i<__BLOCKSIZE_2; i++) {
+                for (int i = 0; i < _BLOCKSIZE_2; i++) {
                     if (r2s[i] < r2_max) {
                         k = (int) (sqrt(r2s[i]) * inverse_binw);
 #ifdef PARALLEL
@@ -1639,11 +1645,11 @@ static void _calc_distance_histogram_vectorized(const coordinate* restrict ref,
                 }
             }
             // process remaining partial block of the n-th row
-            // (__BLOCKSIZE x partial_block_size_conf rectangle):
+            // (_BLOCKSIZE x partial_block_size_conf rectangle):
             if (partial_block_size_conf > 0){
-                _calc_distance_vectors_block(dxs, bref + n * __3_BLOCKSIZE,
+                _calc_distance_vectors_block(dxs, bref + n * _3_BLOCKSIZE,
                                              bconf + \
-                                             nblocks_conf * __3_BLOCKSIZE);
+                                             nblocks_conf * _3_BLOCKSIZE);
                 switch (pbc_type) {
                     case PBCortho:
                         _minimum_image_ortho_lazy_block(dxs, box, half_box);
@@ -1655,11 +1661,11 @@ static void _calc_distance_histogram_vectorized(const coordinate* restrict ref,
                         break;
                 };
                 _calc_squared_distances_block(r2s, dxs);
-                for (int i=0; i<__BLOCKSIZE; i++) {
-                    for (int j=0; j<partial_block_size_conf; j++) {
-                        if (r2s[i*__BLOCKSIZE+j] < r2_max) {
-                            k = (int) (sqrt(r2s[i*__BLOCKSIZE+j]) * \
-                                      inverse_binw);
+                for (int i = 0; i < _BLOCKSIZE; i++) {
+                    for (int j = 0; j < partial_block_size_conf; j++) {
+                        if (r2s[i * _BLOCKSIZE + j] < r2_max) {
+                            k = (int) (sqrt(r2s[i * _BLOCKSIZE + j]) * \
+                                       inverse_binw);
 #ifdef PARALLEL
                             thread_local_histo[k] += 1;
 #else
@@ -1671,16 +1677,15 @@ static void _calc_distance_histogram_vectorized(const coordinate* restrict ref,
             }
         }
         // process remaining partial blocks after the last row
-        // (partial_block_size_ref x __BLOCKSIZE rectangles):
+        // (partial_block_size_ref x _BLOCKSIZE rectangles):
         if (partial_block_size_ref > 0){
 #ifdef PARALLEL
             #pragma omp for schedule(static, 1) nowait
 #endif
-            for (int m=0; m<nblocks_conf; m++) {
-                int k;
+            for (int m = 0; m < nblocks_conf; m++) {
                 _calc_distance_vectors_block(dxs,
-                                             bref + nblocks_ref * __3_BLOCKSIZE,
-                                             bconf + m * __3_BLOCKSIZE);
+                                             bref + nblocks_ref * _3_BLOCKSIZE,
+                                             bconf + m * _3_BLOCKSIZE);
                 switch (pbc_type) {
                     case PBCortho:
                         _minimum_image_ortho_lazy_block(dxs, box, half_box);
@@ -1692,11 +1697,11 @@ static void _calc_distance_histogram_vectorized(const coordinate* restrict ref,
                         break;
                 };
                 _calc_squared_distances_block(r2s, dxs);
-                for (int i=0; i<partial_block_size_ref; i++) {
-                    for (int j=0; j<__BLOCKSIZE; j++) {
-                        if (r2s[i*__BLOCKSIZE+j] < r2_max) {
-                            k = (int) (sqrt(r2s[i*__BLOCKSIZE+j]) * \
-                                      inverse_binw);
+                for (int i = 0; i < partial_block_size_ref; i++) {
+                    for (int j = 0; j < _BLOCKSIZE; j++) {
+                        if (r2s[i * _BLOCKSIZE + j] < r2_max) {
+                            k = (int) (sqrt(r2s[i * _BLOCKSIZE + j]) * \
+                                       inverse_binw);
 #ifdef PARALLEL
                             thread_local_histo[k] += 1;
 #else
@@ -1714,7 +1719,7 @@ static void _calc_distance_histogram_vectorized(const coordinate* restrict ref,
         // gather local results from threads
         #pragma omp critical
         {
-            for (int i=0; i<numhisto; i++) {
+            for (int i = 0; i < numhisto; i++) {
                 histo[i] += thread_local_histo[i];
             }
         }
@@ -1725,17 +1730,17 @@ static void _calc_distance_histogram_vectorized(const coordinate* restrict ref,
     // (partial_block_size_ref x partial_block_size_conf rectangle):
     if (partial_block_size_ref * partial_block_size_conf > 0) {
         int k;
-        double* dxs = (double*) aligned_calloc(__3_BLOCKSIZE_2, sizeof(double));
-        double* r2s = (double*) aligned_calloc(__BLOCKSIZE_2, sizeof(double));
-        _calc_distance_vectors_block(dxs, bref + nblocks_ref * __3_BLOCKSIZE,
-                                     bconf + nblocks_conf * __3_BLOCKSIZE);
+        double* dxs = (double*) aligned_calloc(_3_BLOCKSIZE_2, sizeof(double));
+        double* r2s = (double*) aligned_calloc(_BLOCKSIZE_2, sizeof(double));
+        _calc_distance_vectors_block(dxs, bref + nblocks_ref * _3_BLOCKSIZE,
+                                     bconf + nblocks_conf * _3_BLOCKSIZE);
         switch (pbc_type) {
             case PBCortho:
                 _minimum_image_ortho_lazy_block(dxs, box, half_box);
                 break;
             case PBCtriclinic:
                 {
-                    double* aux = (double*) aligned_calloc(11 * __BLOCKSIZE_2,
+                    double* aux = (double*) aligned_calloc(11 * _BLOCKSIZE_2,
                                                            sizeof(double));
                     _minimum_image_triclinic_lazy_block(dxs, box, aux);
                     free(aux);
@@ -1745,10 +1750,10 @@ static void _calc_distance_histogram_vectorized(const coordinate* restrict ref,
                 break;
         };
         _calc_squared_distances_block(r2s, dxs);
-        for (int i=0; i<partial_block_size_ref; i++) {
-            for (int j=0; j<partial_block_size_conf; j++) {
-                if (r2s[i*__BLOCKSIZE+j] < r2_max) {
-                    k = (int) (sqrt(r2s[i*__BLOCKSIZE+j]) * inverse_binw);
+        for (int i = 0; i < partial_block_size_ref; i++) {
+            for (int j = 0; j < partial_block_size_conf; j++) {
+                if (r2s[i * _BLOCKSIZE + j] < r2_max) {
+                    k = (int) (sqrt(r2s[i * _BLOCKSIZE + j]) * inverse_binw);
                     histo[k] += 1;
                 }
             }
@@ -1769,8 +1774,8 @@ static void _calc_self_distance_histogram_vectorized(const coordinate* \
 {
     double inverse_binw = 1.0 / binw;
     double r2_max = (binw * numhisto) * (binw * numhisto);
-    const int nblocks = numref / __BLOCKSIZE;
-    const int partial_block_size = numref % __BLOCKSIZE;
+    const int nblocks = numref / _BLOCKSIZE;
+    const int partial_block_size = numref % _BLOCKSIZE;
     float* bref = _get_coords_in_blocks(ref, numref);
     float half_box[3] = {0.0};
 
@@ -1794,20 +1799,20 @@ static void _calc_self_distance_histogram_vectorized(const coordinate* \
         histbin* thread_local_histo = \
         (histbin*) aligned_calloc(numhisto + 1, sizeof(histbin));
 #endif
-        int k;
-        double* dxs = (double*) aligned_calloc(__3_BLOCKSIZE_2, sizeof(double));
-        double* r2s = (double*) aligned_calloc(__BLOCKSIZE_2, sizeof(double));
+        double* dxs = (double*) aligned_calloc(_3_BLOCKSIZE_2, sizeof(double));
+        double* r2s = (double*) aligned_calloc(_BLOCKSIZE_2, sizeof(double));
         double* aux = NULL;
+        int k;
         if (pbc_type == PBCtriclinic) {
-            aux = (double*) aligned_calloc(11 * __BLOCKSIZE_2, sizeof(double));
+            aux = (double*) aligned_calloc(11 * _BLOCKSIZE_2, sizeof(double));
         }
 #ifdef PARALLEL
         #pragma omp for schedule(dynamic, 1) nowait
 #endif
-        for (int n=0; n<nblocks; n++) {
+        for (int n = 0; n < nblocks; n++) {
             // process first block of the n-th row
-            // (__BLOCKSIZE x (__BLOCKSIZE - 1) triangle)
-            _calc_self_distance_vectors_block(dxs, bref + n * __3_BLOCKSIZE);
+            // (_BLOCKSIZE x (_BLOCKSIZE - 1) triangle)
+            _calc_self_distance_vectors_block(dxs, bref + n * _3_BLOCKSIZE);
             switch (pbc_type) {
                 case PBCortho:
                     _minimum_image_ortho_lazy_block(dxs, box, half_box);
@@ -1819,10 +1824,11 @@ static void _calc_self_distance_histogram_vectorized(const coordinate* \
                     break;
             };
             _calc_squared_distances_block(r2s, dxs);
-            for (int i=0; i<__BLOCKSIZE-1; i++) {
-                for (int j=i+1; j<__BLOCKSIZE; j++) {
-                    if (r2s[i*__BLOCKSIZE+j] < r2_max) {
-                        k = (int) (sqrt(r2s[i*__BLOCKSIZE+j]) * inverse_binw);
+            for (int i = 0; i < _BLOCKSIZE - 1; i++) {
+                for (int j = i + 1; j < _BLOCKSIZE; j++) {
+                    if (r2s[i * _BLOCKSIZE + j] < r2_max) {
+                        k = (int) (sqrt(r2s[i * _BLOCKSIZE + j]) * \
+                                   inverse_binw);
 #ifdef PARALLEL
                         thread_local_histo[k] += 1;
 #else
@@ -1832,10 +1838,10 @@ static void _calc_self_distance_histogram_vectorized(const coordinate* \
                 }
             }
             // process remaining blocks of the n-th row
-            // (__BLOCKSIZE x __BLOCKSIZE squares):
-            for (int m=n+1; m<nblocks; m++){
-                _calc_distance_vectors_block(dxs, bref + n * __3_BLOCKSIZE,
-                                             bref + m * __3_BLOCKSIZE);
+            // (_BLOCKSIZE x _BLOCKSIZE squares):
+            for (int m = n + 1; m < nblocks; m++){
+                _calc_distance_vectors_block(dxs, bref + n * _3_BLOCKSIZE,
+                                             bref + m * _3_BLOCKSIZE);
                 switch (pbc_type) {
                     case PBCortho:
                         _minimum_image_ortho_lazy_block(dxs, box, half_box);
@@ -1847,7 +1853,7 @@ static void _calc_self_distance_histogram_vectorized(const coordinate* \
                         break;
                 };
                 _calc_squared_distances_block(r2s, dxs);
-                for (int i=0; i<__BLOCKSIZE_2; i++) {
+                for (int i = 0; i < _BLOCKSIZE_2; i++) {
                     if (r2s[i] < r2_max) {
                         k = (int) (sqrt(r2s[i]) * inverse_binw);
 #ifdef PARALLEL
@@ -1859,10 +1865,10 @@ static void _calc_self_distance_histogram_vectorized(const coordinate* \
                 }
             }
             // process the remaining partial block of the n-th row
-            // (__BLOCKSIZE x partial_block_size rectangle):
+            // (_BLOCKSIZE x partial_block_size rectangle):
             if (partial_block_size > 0){
-                _calc_distance_vectors_block(dxs, bref + n * __3_BLOCKSIZE,
-                                             bref + nblocks * __3_BLOCKSIZE);
+                _calc_distance_vectors_block(dxs, bref + n * _3_BLOCKSIZE,
+                                             bref + nblocks * _3_BLOCKSIZE);
                 switch (pbc_type) {
                     case PBCortho:
                         _minimum_image_ortho_lazy_block(dxs, box, half_box);
@@ -1874,11 +1880,11 @@ static void _calc_self_distance_histogram_vectorized(const coordinate* \
                         break;
                 };
                 _calc_squared_distances_block(r2s, dxs);
-                for (int i=0; i<__BLOCKSIZE; i++) {
-                    for (int j=0; j<partial_block_size; j++) {
-                        if (r2s[i*__BLOCKSIZE+j] < r2_max) {
-                            k = (int) (sqrt(r2s[i*__BLOCKSIZE+j]) * \
-                                      inverse_binw);
+                for (int i = 0; i < _BLOCKSIZE; i++) {
+                    for (int j = 0; j < partial_block_size; j++) {
+                        if (r2s[i * _BLOCKSIZE + j] < r2_max) {
+                            k = (int) (sqrt(r2s[i * _BLOCKSIZE + j]) * \
+                                       inverse_binw);
 #ifdef PARALLEL
                             thread_local_histo[k] += 1;
 #else
@@ -1896,7 +1902,7 @@ static void _calc_self_distance_histogram_vectorized(const coordinate* \
         // gather local results from threads
         #pragma omp critical
         {
-            for (int i=0; i<numhisto; i++) {
+            for (int i = 0; i < numhisto; i++) {
                 histo[i] += thread_local_histo[i];
             }
         }
@@ -1907,16 +1913,16 @@ static void _calc_self_distance_histogram_vectorized(const coordinate* \
     // ((partial_block_size - 1) x (partial_block_size - 1) triangle):
     if (partial_block_size > 0) {
         int k;
-        double* dxs = (double*) aligned_calloc(__3_BLOCKSIZE_2, sizeof(double));
-        double* r2s = (double*) aligned_calloc(__BLOCKSIZE_2, sizeof(double));
-        _calc_self_distance_vectors_block(dxs, bref + nblocks * __3_BLOCKSIZE);
+        double* dxs = (double*) aligned_calloc(_3_BLOCKSIZE_2, sizeof(double));
+        double* r2s = (double*) aligned_calloc(_BLOCKSIZE_2, sizeof(double));
+        _calc_self_distance_vectors_block(dxs, bref + nblocks * _3_BLOCKSIZE);
         switch (pbc_type) {
             case PBCortho:
                 _minimum_image_ortho_lazy_block(dxs, box, half_box);
                 break;
             case PBCtriclinic:
                 {
-                    double* aux = (double*) aligned_calloc(11 * __BLOCKSIZE_2,
+                    double* aux = (double*) aligned_calloc(11 * _BLOCKSIZE_2,
                                                            sizeof(double));
                     _minimum_image_triclinic_lazy_block(dxs, box, aux);
                     free(aux);
@@ -1926,10 +1932,10 @@ static void _calc_self_distance_histogram_vectorized(const coordinate* \
                 break;
         };
         _calc_squared_distances_block(r2s, dxs);
-        for (int i=0; i<partial_block_size-1; i++) {
-            for (int j=i+1; j<partial_block_size; j++) {
-                if (r2s[i*__BLOCKSIZE+j] < r2_max) {
-                    k = (int) (sqrt(r2s[i*__BLOCKSIZE+j]) * inverse_binw);
+        for (int i = 0; i < partial_block_size - 1; i++) {
+            for (int j = i + 1; j < partial_block_size; j++) {
+                if (r2s[i * _BLOCKSIZE + j] < r2_max) {
+                    k = (int) (sqrt(r2s[i * _BLOCKSIZE + j]) * inverse_binw);
                     histo[k] += 1;
                 }
             }

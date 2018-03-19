@@ -38,19 +38,36 @@ cdef extern from "calc_distances.h":
     ctypedef float coordinate[3]
     ctypedef int64_t histbin
     cdef bint USED_OPENMP
+    cdef int _BLOCKSIZE
     cdef enum PBCenum "ePBC":
         PBCortho, PBCtriclinic, PBCnone, PBCunknown
     void _calc_distance_array(coordinate* ref, int numref, coordinate* conf,
                               int numconf, float* box, PBCenum pbc_type,
                               double* distances)
+    void _calc_distance_array_vectorized(coordinate* ref, int numref,
+                                         coordinate* conf, int numconf,
+                                         float* box, PBCenum pbc_type,
+                                         double* distances)
     void _calc_self_distance_array(coordinate* ref, int numref, float* box,
                                    PBCenum pbc_type, double* distances)
+    void _calc_self_distance_array_vectorized(coordinate* ref, int numref,
+                                              float* box, PBCenum pbc_type,
+                                              double* distances)
     void _calc_distance_histogram(coordinate* ref, int numref, coordinate* conf,
                                   int numconf, float* box, PBCenum pbc_type,
                                   double binw, histbin* histo, int numhisto)
+    void _calc_distance_histogram_vectorized(coordinate* ref, int numref,
+                                             coordinate* conf, int numconf,
+                                             float* box, PBCenum pbc_type,
+                                             double binw, histbin* histo,
+                                             int numhisto)
     void _calc_self_distance_histogram(coordinate* ref, int numref, float* box,
                                        PBCenum pbc_type, double binw,
                                        histbin* histo, int numhisto)
+    void _calc_self_distance_histogram_vectorized(coordinate* ref, int numref,
+                                                  float* box, PBCenum pbc_type,
+                                                  double binw, histbin* histo,
+                                                  int numhisto)
     void _coord_transform(coordinate* coords, int numCoords, coordinate* box)
     void _calc_bond_distance(coordinate* atom1, coordinate* atom2, int numatom,
                              float* box, PBCenum pbc_type, double* distances)
@@ -64,6 +81,7 @@ cdef extern from "calc_distances.h":
     void _minimum_image_ortho(double* x, float* box, float* inverse_box)
 
 OPENMP_ENABLED = True if USED_OPENMP else False
+BLOCKSIZE = _BLOCKSIZE
 
 class PBCtype(object):
     # wrapper to expose the ePBC enumerator to Python
@@ -80,11 +98,18 @@ def calc_distance_array(numpy.ndarray ref, numpy.ndarray conf,
     confnum = conf.shape[0]
     refnum = ref.shape[0]
 
-    _calc_distance_array(<coordinate*>ref.data, refnum,
-                         <coordinate*>conf.data, confnum,
-                         NULL if box is None else <float*>box.data,
-                         pbc_type,
-                         <double*>result.data)
+    if refnum < BLOCKSIZE:
+        _calc_distance_array(<coordinate*>ref.data, refnum,
+                             <coordinate*>conf.data, confnum,
+                             NULL if box is None else <float*>box.data,
+                             pbc_type,
+                             <double*>result.data)
+    else:
+        _calc_distance_array_vectorized(<coordinate*>ref.data, refnum,
+                                        <coordinate*>conf.data, confnum,
+                                        NULL if box is None else \
+                                        <float*>box.data, pbc_type,
+                                        <double*>result.data)
 
 def calc_self_distance_array(numpy.ndarray ref,
                              numpy.ndarray box,
@@ -93,10 +118,16 @@ def calc_self_distance_array(numpy.ndarray ref,
     cdef int refnum
     refnum = ref.shape[0]
 
-    _calc_self_distance_array(<coordinate*>ref.data, refnum,
-                              NULL if box is None else <float*>box.data,
-                              pbc_type,
-                              <double*>result.data)
+    if refnum < BLOCKSIZE:
+        _calc_self_distance_array(<coordinate*>ref.data, refnum,
+                                  NULL if box is None else <float*>box.data,
+                                  pbc_type,
+                                  <double*>result.data)
+    else:
+        _calc_self_distance_array_vectorized(<coordinate*>ref.data, refnum,
+                                             NULL if box is None else \
+                                             <float*>box.data, pbc_type,
+                                             <double*>result.data)
 
 def calc_distance_histogram(numpy.ndarray ref, numpy.ndarray conf,
                             numpy.ndarray box, PBCenum pbc_type,
@@ -108,10 +139,18 @@ def calc_distance_histogram(numpy.ndarray ref, numpy.ndarray conf,
     histonum = histo.shape[0]
     binwidth = bin_width
 
-    _calc_distance_histogram(<coordinate*>ref.data, refnum,
-                             <coordinate*>conf.data, confnum,
-                             NULL if box is None else <float*>box.data,
-                             pbc_type, binwidth, <histbin*>histo.data, histonum)
+    if refnum < BLOCKSIZE:
+        _calc_distance_histogram(<coordinate*>ref.data, refnum,
+                                 <coordinate*>conf.data, confnum,
+                                 NULL if box is None else <float*>box.data,
+                                 pbc_type, binwidth, <histbin*>histo.data, histonum)
+    else:
+        _calc_distance_histogram_vectorized(<coordinate*>ref.data, refnum,
+                                            <coordinate*>conf.data, confnum,
+                                            NULL if box is None else \
+                                            <float*>box.data, pbc_type,
+                                            binwidth, <histbin*>histo.data,
+                                            histonum)
 
 def calc_self_distance_histogram(numpy.ndarray ref, numpy.ndarray box,
                                  PBCenum pbc_type, numpy.ndarray histo,
@@ -122,10 +161,17 @@ def calc_self_distance_histogram(numpy.ndarray ref, numpy.ndarray box,
     histonum = histo.shape[0]
     binwidth = bin_width
 
-    _calc_self_distance_histogram(<coordinate*>ref.data, refnum,
-                                  NULL if box is None else <float*>box.data,
-                                  pbc_type, binwidth, <histbin*>histo.data,
-                                  histonum)
+    if refnum < BLOCKSIZE:
+        _calc_self_distance_histogram(<coordinate*>ref.data, refnum,
+                                      NULL if box is None else <float*>box.data,
+                                      pbc_type, binwidth, <histbin*>histo.data,
+                                      histonum)
+    else:
+        _calc_self_distance_histogram_vectorized(<coordinate*>ref.data, refnum,
+                                                 NULL if box is None else \
+                                                 <float*>box.data, pbc_type,
+                                                 binwidth, <histbin*>histo.data,
+                                                 histonum)
 
 def coord_transform(numpy.ndarray coords,
                     numpy.ndarray box):
@@ -133,9 +179,8 @@ def coord_transform(numpy.ndarray coords,
     numcoords = coords.shape[0]
     size = coords.size
 
-    if size >  0:
-        _coord_transform( &coords[0,0], numcoords,
-                          &box[0,0])
+    _coord_transform(<coordinate*>coords.data, numcoords,
+                     <coordinate*>box.data)
 
 def calc_bond_distance(numpy.ndarray coords1, numpy.ndarray coords2,
                        numpy.ndarray box, PBCenum pbc_type,
@@ -173,13 +218,13 @@ def ortho_pbc(numpy.ndarray coords, numpy.ndarray box):
     cdef int numcoords
     numcoords = coords.shape[0]
 
-    _ortho_pbc(<coordinate*> coords.data, numcoords, <float*>box.data)
+    _ortho_pbc(<coordinate*>coords.data, numcoords, <float*>box.data)
 
 def triclinic_pbc(numpy.ndarray coords, numpy.ndarray box):
     cdef int numcoords
     numcoords = coords.shape[0]
 
-    _triclinic_pbc(<coordinate*> coords.data, numcoords, <float*>box.data)
+    _triclinic_pbc(<coordinate*>coords.data, numcoords, <float*>box.data)
 
 
 @cython.boundscheck(False)
