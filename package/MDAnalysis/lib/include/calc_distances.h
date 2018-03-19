@@ -353,7 +353,7 @@ static void _calc_distance_array(coordinate* ref, int numref, coordinate* conf,
                 default:
                     break;
             };
-            double rsq = (dx[0] * dx[0]) + (dx[1] * dx[1]) + (dx[2] * dx[2]);
+            double rsq = dx[0] * dx[0] + dx[1] * dx[1] + dx[2] * dx[2];
             *(distances + i * numconf + j) = sqrt(rsq);
         }
     }
@@ -402,7 +402,7 @@ static void _calc_self_distance_array(coordinate* ref, int numref, float* box,
                 default:
                     break;
             };
-            double rsq = (dx[0] * dx[0]) + (dx[1] * dx[1]) + (dx[2] * dx[2]);
+            double rsq = dx[0] * dx[0] + dx[1] * dx[1] + dx[2] * dx[2];
             *(distances + distpos) = sqrt(rsq);
             distpos += 1;
         }
@@ -410,13 +410,18 @@ static void _calc_self_distance_array(coordinate* ref, int numref, float* box,
 }
 
 static void _calc_distance_histogram(coordinate* ref, int numref,
-                                     coordinate* conf, int numconf,
-                                     float* box, ePBC pbc_type,
-                                     double binw, histbin* histo, int numhisto)
+                                     coordinate* conf, int numconf, float* box,
+                                     ePBC pbc_type, double rmin, double rmax,
+                                     histbin* histo, int numhisto)
 {
-    double inverse_binw = 1.0 / binw;
-    double r2_max = (binw * numhisto) * (binw * numhisto);
+    assert((rmin >= 0.0) && \
+           "Minimum distance must be greater than or equal to zero");
+    assert(((rmax - rmin) > FLT_EPSILON) && \
+           "Maximum distance must be greater than minimum distance.");
     float half_box[3] = {0.0};
+    double inverse_binw = numhisto / (rmax - rmin);
+    double r2_min = rmin * rmin;
+    double r2_max = rmax * rmax;
 
     switch(pbc_type) {
         case PBCortho:
@@ -436,13 +441,10 @@ static void _calc_distance_histogram(coordinate* ref, int numref,
     #pragma omp parallel shared(histo)
 #endif
     {
-        int k;
         double dx[3];
-        double r2;
+        histbin* local_histo = (histbin*) calloc(numhisto + 1, sizeof(histbin));
+        assert(local_histo != NULL);
 #ifdef PARALLEL
-        histbin* thread_local_histo = (histbin*) calloc((size_t) numhisto,
-                                                        sizeof(histbin));
-        assert(thread_local_histo != NULL);
         #pragma omp for nowait
 #endif
         for (int i = 0; i < numref; i++) {
@@ -460,36 +462,43 @@ static void _calc_distance_histogram(coordinate* ref, int numref,
                     default:
                         break;
                 };
-                r2 = dx[0] * dx[0] + dx[1] * dx[1] + dx[2] * dx[2];
-                if (r2 < r2_max) {
-                    k = (int) (sqrt(r2) * inverse_binw);
-#ifdef PARALLEL
-                    thread_local_histo[k] += 1;
-#else
-                    histo[k] += 1;
-#endif
+                double r2 = dx[0] * dx[0] + dx[1] * dx[1] + dx[2] * dx[2];
+                if ((r2 >= r2_min) && (r2 <= r2_max)) {
+                    int k = (int) ((sqrt(r2) - rmin) * inverse_binw);
+                    if (k >= 0) {
+                        local_histo[k] += 1;
+                    }
                 }
             }
         }
-#ifdef PARALLEL
-        // gather local results from threads
+        // gather local results
         for (int i = 0; i < numhisto; i++) {
+#ifdef PARALLEL
             #pragma omp atomic
-            histo[i] += thread_local_histo[i];
-        }
-        free(thread_local_histo);
 #endif
+            histo[i] += local_histo[i];
+        }
+#ifdef PARALLEL
+        #pragma omp atomic
+#endif
+        histo[numhisto - 1] += local_histo[numhisto]; // Numpy consistency
+        free(local_histo);
     }
 }
 
 static void _calc_self_distance_histogram(coordinate* ref, int numref,
                                           float* box, ePBC pbc_type,
-                                          double binw, histbin* histo,
-                                          int numhisto)
+                                          double rmin, double rmax,
+                                          histbin* histo, int numhisto)
 {
-    double inverse_binw = 1.0 / binw;
-    double r2_max = (binw * numhisto) * (binw * numhisto);
+    assert((rmin >= 0.0) && \
+           "Minimum distance must be greater than or equal to zero");
+    assert(((rmax - rmin) > FLT_EPSILON) && \
+           "Maximum distance must be greater than minimum distance.");
     float half_box[3] = {0.0};
+    double inverse_binw = numhisto / (rmax - rmin);
+    double r2_min = rmin * rmin;
+    double r2_max = rmax * rmax;
 
     switch(pbc_type) {
         case PBCortho:
@@ -508,13 +517,10 @@ static void _calc_self_distance_histogram(coordinate* ref, int numref,
     #pragma omp parallel shared(histo)
 #endif
     {
-        int k;
         double dx[3];
-        double r2;
+        histbin* local_histo = (histbin*) calloc(numhisto + 1, sizeof(histbin));
+        assert(local_histo != NULL);
 #ifdef PARALLEL
-        histbin* thread_local_histo = (histbin*) calloc((size_t) numhisto,
-                                                        sizeof(histbin));
-        assert(thread_local_histo != NULL);
         #pragma omp for nowait
 #endif
         for (int i = 0; i < numref - 1; i++) {
@@ -532,25 +538,27 @@ static void _calc_self_distance_histogram(coordinate* ref, int numref,
                     default:
                         break;
                 };
-                r2 = dx[0] * dx[0] + dx[1] * dx[1] + dx[2] * dx[2];
-                if (r2 < r2_max) {
-                    k = (int) (sqrt(r2) * inverse_binw);
-#ifdef PARALLEL
-                    thread_local_histo[k] += 1;
-#else
-                    histo[k] += 1;
-#endif
+                double r2 = dx[0] * dx[0] + dx[1] * dx[1] + dx[2] * dx[2];
+                if ((r2 >= r2_min) && (r2 <= r2_max)) {
+                    int k = (int) ((sqrt(r2) - rmin) * inverse_binw);
+                    if (k >= 0) {
+                        local_histo[k] += 1;
+                    }
                 }
             }
         }
-#ifdef PARALLEL
         // gather local results from threads
         for (int i = 0; i < numhisto; i++) {
+#ifdef PARALLEL
             #pragma omp atomic
-            histo[i] += thread_local_histo[i];
-        }
-        free(thread_local_histo);
 #endif
+            histo[i] += local_histo[i];
+        }
+#ifdef PARALLEL
+        #pragma omp atomic
+#endif
+        histo[numhisto - 1] += local_histo[numhisto]; // Numpy consistency
+        free(local_histo);
     }
 }
 
@@ -1367,42 +1375,40 @@ static void _calc_distance_array_vectorized(const coordinate* restrict ref,
                 }
             }
         }
-        free(dxs);
-        free(r2s);
-        free(aux);
-    }
-    // process remaining bottom-right partial block
-    // (partial_block_size_ref x partial_block_size_conf rectangle):
-    if (partial_block_size_ref * partial_block_size_conf > 0) {
-        double* dxs = (double*) aligned_calloc(_3_BLOCKSIZE_2, sizeof(double));
-        double* r2s = (double*) aligned_calloc(_BLOCKSIZE_2, sizeof(double));
-        _calc_distance_vectors_block(dxs, bref + nblocks_ref * _3_BLOCKSIZE,
-                                     bconf + nblocks_conf * _3_BLOCKSIZE);
-        switch (pbc_type) {
-            case PBCortho:
-                _minimum_image_ortho_lazy_block(dxs, box, half_box);
-                break;
-            case PBCtriclinic:
-                {
-                    double* aux = (double*) aligned_calloc(11 * _BLOCKSIZE_2,
-                                                           sizeof(double));
-                    _minimum_image_triclinic_lazy_block(dxs, box, aux);
-                    free(aux);
+#ifdef PARALLEL
+        #pragma omp single nowait
+#endif
+        {
+            // process remaining bottom-right partial block
+            // (partial_block_size_ref x partial_block_size_conf rectangle):
+            if (partial_block_size_ref * partial_block_size_conf > 0) {
+                _calc_distance_vectors_block(dxs, bref + \
+                                             nblocks_ref * _3_BLOCKSIZE,
+                                             bconf + \
+                                             nblocks_conf * _3_BLOCKSIZE);
+                switch (pbc_type) {
+                    case PBCortho:
+                        _minimum_image_ortho_lazy_block(dxs, box, half_box);
+                        break;
+                    case PBCtriclinic:
+                            _minimum_image_triclinic_lazy_block(dxs, box, aux);
+                        break;
+                    default:
+                        break;
+                };
+                _calc_squared_distances_block(r2s, dxs);
+                double* _dists = distances + _BLOCKSIZE * \
+                                 (nblocks_ref * numconf + nblocks_conf);
+                for (int i = 0; i < partial_block_size_ref; i++) {
+                    for (int j = 0; j < partial_block_size_conf; j++) {
+                        _dists[i * numconf + j] = sqrt(r2s[i * _BLOCKSIZE + j]);
+                    }
                 }
-                break;
-            default:
-                break;
-        };
-        _calc_squared_distances_block(r2s, dxs);
-        double* _dists = distances + \
-                         _BLOCKSIZE * (nblocks_ref * numconf + nblocks_conf);
-        for (int i = 0; i < partial_block_size_ref; i++) {
-            for (int j = 0; j < partial_block_size_conf; j++) {
-                _dists[i * numconf + j] = sqrt(r2s[i * _BLOCKSIZE + j]);
             }
         }
         free(dxs);
         free(r2s);
+        free(aux);
     }
     free(bref);
     free(bconf);
@@ -1523,44 +1529,43 @@ static void _calc_self_distance_array_vectorized(const coordinate* restrict ref,
                 }
             }
         }
-        free(dxs);
-        free(r2s);
-        free(aux);
-    }
-    // process remaining bottom-right partial block:
-    // ((partial_block_size - 1) x (partial_block_size - 1) triangle):
-    if (partial_block_size > 0) {
-        double* dxs = (double*) aligned_calloc(_3_BLOCKSIZE_2, sizeof(double));
-        double* r2s = (double*) aligned_calloc(_BLOCKSIZE_2, sizeof(double));
-        _calc_self_distance_vectors_block(dxs, bref + nblocks * _3_BLOCKSIZE);
-        switch (pbc_type) {
-            case PBCortho:
-                _minimum_image_ortho_lazy_block(dxs, box, half_box);
-                break;
-            case PBCtriclinic:
-                {
-                    double* aux = (double*) aligned_calloc(11 * _BLOCKSIZE_2,
-                                                           sizeof(double));
-                    _minimum_image_triclinic_lazy_block(dxs, box, aux);
-                    free(aux);
+#ifdef PARALLEL
+        #pragma omp single nowait
+#endif
+        {
+            // process remaining bottom-right partial block:
+            // ((partial_block_size - 1) x (partial_block_size - 1) triangle):
+            if (partial_block_size > 0) {
+                _calc_self_distance_vectors_block(dxs, bref + \
+                                                  nblocks * _3_BLOCKSIZE);
+                switch (pbc_type) {
+                    case PBCortho:
+                        _minimum_image_ortho_lazy_block(dxs, box, half_box);
+                        break;
+                    case PBCtriclinic:
+                            _minimum_image_triclinic_lazy_block(dxs, box, aux);
+                        break;
+                    default:
+                        break;
+                };
+                _calc_squared_distances_block(r2s, dxs);
+                double * _distances = distances + \
+                                      nblocks * (numref * _BLOCKSIZE - \
+                                      (nblocks * _BLOCKSIZE_2 + _BLOCKSIZE) \
+                                      / 2);
+                for (int i = 0; i < partial_block_size - 1; i++) {
+                    double* __distances = _distances + i * (numref - \
+                                          nblocks * _BLOCKSIZE) - \
+                                          (i + 1) * (i + 2) / 2;
+                    for (int j = i + 1; j < partial_block_size; j++) {
+                        __distances[j] = sqrt(r2s[i * _BLOCKSIZE + j]);
+                    }
                 }
-                break;
-            default:
-                break;
-        };
-        _calc_squared_distances_block(r2s, dxs);
-        double * _distances = distances + nblocks * (numref * _BLOCKSIZE - \
-                              (nblocks * _BLOCKSIZE_2 + _BLOCKSIZE) / 2);
-        for (int i = 0; i < partial_block_size - 1; i++) {
-            double* __distances = _distances + \
-                                  i * (numref - nblocks * _BLOCKSIZE) - \
-                                  (i + 1) * (i + 2) / 2;
-            for (int j = i + 1; j < partial_block_size; j++) {
-                __distances[j] = sqrt(r2s[i * _BLOCKSIZE + j]);
             }
         }
         free(dxs);
         free(r2s);
+        free(aux);
     }
     free(bref);
 }
@@ -1570,12 +1575,14 @@ static void _calc_distance_histogram_vectorized(const coordinate* restrict ref,
                                                 const coordinate* restrict conf,
                                                 int numconf,
                                                 const float* box, ePBC pbc_type,
-                                                double binw,
+                                                double rmin, double rmax,
                                                 histbin* restrict histo,
                                                 int numhisto)
 {
-    double inverse_binw = 1.0 / binw;
-    double r2_max = (binw * numhisto) * (binw * numhisto);
+    assert((rmin >= 0.0) && \
+           "Minimum distance must be greater than or equal to zero");
+    assert(((rmax - rmin) > FLT_EPSILON) && \
+           "Maximum distance must be greater than minimum distance.");
     const int nblocks_ref = numref / _BLOCKSIZE;
     const int nblocks_conf = numconf / _BLOCKSIZE;
     const int partial_block_size_ref = numref % _BLOCKSIZE;
@@ -1583,6 +1590,9 @@ static void _calc_distance_histogram_vectorized(const coordinate* restrict ref,
     float* bref = _get_coords_in_blocks(ref, numref);
     float* bconf = _get_coords_in_blocks(conf, numconf);
     float half_box[3] = {0.0};
+    double inverse_binw = numhisto / (rmax - rmin);
+    double r2_min = rmin * rmin;
+    double r2_max = rmax * rmax;
 
     switch (pbc_type) {
         case PBCortho:
@@ -1602,14 +1612,12 @@ static void _calc_distance_histogram_vectorized(const coordinate* restrict ref,
 
 #ifdef PARALLEL
     #pragma omp parallel shared(histo)
-    {
-        histbin* thread_local_histo = \
-        (histbin*) aligned_calloc(numhisto + 1, sizeof(histbin));
 #endif
+    {
+        histbin* local_histo = (histbin*) calloc(numhisto + 1, sizeof(histbin));
         double* dxs = (double*) aligned_calloc(_3_BLOCKSIZE_2, sizeof(double));
         double* r2s = (double*) aligned_calloc(_BLOCKSIZE_2, sizeof(double));
         double* aux = NULL;
-        int k;
         if (pbc_type == PBCtriclinic) {
             aux = (double*) aligned_calloc(11 * _BLOCKSIZE_2, sizeof(double));
         }
@@ -1634,13 +1642,11 @@ static void _calc_distance_histogram_vectorized(const coordinate* restrict ref,
                 };
                 _calc_squared_distances_block(r2s, dxs);
                 for (int i = 0; i < _BLOCKSIZE_2; i++) {
-                    if (r2s[i] < r2_max) {
-                        k = (int) (sqrt(r2s[i]) * inverse_binw);
-#ifdef PARALLEL
-                        thread_local_histo[k] += 1;
-#else
-                        histo[k] += 1;
-#endif
+                    if ((r2s[i] >= r2_min) && (r2s[i] <= r2_max)) {
+                        int k = (int) ((sqrt(r2s[i]) - rmin) * inverse_binw);
+                        if (k >= 0) {
+                            local_histo[k] += 1;
+                        }
                     }
                 }
             }
@@ -1663,14 +1669,12 @@ static void _calc_distance_histogram_vectorized(const coordinate* restrict ref,
                 _calc_squared_distances_block(r2s, dxs);
                 for (int i = 0; i < _BLOCKSIZE; i++) {
                     for (int j = 0; j < partial_block_size_conf; j++) {
-                        if (r2s[i * _BLOCKSIZE + j] < r2_max) {
-                            k = (int) (sqrt(r2s[i * _BLOCKSIZE + j]) * \
-                                       inverse_binw);
-#ifdef PARALLEL
-                            thread_local_histo[k] += 1;
-#else
-                            histo[k] += 1;
-#endif
+                        double r2 = r2s[i * _BLOCKSIZE + j];
+                        if ((r2 >= r2_min) && (r2 <= r2_max)) {
+                            int k = (int) ((sqrt(r2) - rmin) * inverse_binw);
+                            if (k >= 0) {
+                                local_histo[k] += 1;
+                            }
                         }
                     }
                 }
@@ -1699,14 +1703,47 @@ static void _calc_distance_histogram_vectorized(const coordinate* restrict ref,
                 _calc_squared_distances_block(r2s, dxs);
                 for (int i = 0; i < partial_block_size_ref; i++) {
                     for (int j = 0; j < _BLOCKSIZE; j++) {
-                        if (r2s[i * _BLOCKSIZE + j] < r2_max) {
-                            k = (int) (sqrt(r2s[i * _BLOCKSIZE + j]) * \
-                                       inverse_binw);
+                        double r2 = r2s[i * _BLOCKSIZE + j];
+                        if ((r2 >= r2_min) && (r2 <= r2_max)) {
+                            int k = (int) ((sqrt(r2) - rmin) * inverse_binw);
+                            if (k >= 0) {
+                                local_histo[k] += 1;
+                            }
+                        }
+                    }
+                }
+            }
+        }
 #ifdef PARALLEL
-                            thread_local_histo[k] += 1;
-#else
-                            histo[k] += 1;
+        #pragma omp single nowait
 #endif
+        {
+            // process remaining bottom-right partial block
+            // (partial_block_size_ref x partial_block_size_conf rectangle):
+            if (partial_block_size_ref * partial_block_size_conf > 0) {
+                _calc_distance_vectors_block(dxs, bref + \
+                                             nblocks_ref * _3_BLOCKSIZE,
+                                             bconf + \
+                                             nblocks_conf * _3_BLOCKSIZE);
+                switch (pbc_type) {
+                    case PBCortho:
+                        _minimum_image_ortho_lazy_block(dxs, box, half_box);
+                        break;
+                    case PBCtriclinic:
+                            _minimum_image_triclinic_lazy_block(dxs, box, aux);
+                        break;
+                    default:
+                        break;
+                };
+                _calc_squared_distances_block(r2s, dxs);
+                for (int i = 0; i < partial_block_size_ref; i++) {
+                    for (int j = 0; j < partial_block_size_conf; j++) {
+                        double r2 = r2s[i * _BLOCKSIZE + j];
+                        if ((r2 >= r2_min) && (r2 <= r2_max)) {
+                            int k = (int) ((sqrt(r2) - rmin) * inverse_binw);
+                            if (k >= 0) {
+                                local_histo[k] += 1;
+                            }
                         }
                     }
                 }
@@ -1715,51 +1752,18 @@ static void _calc_distance_histogram_vectorized(const coordinate* restrict ref,
         free(dxs);
         free(r2s);
         free(aux);
-#ifdef PARALLEL
         // gather local results from threads
-        #pragma omp critical
-        {
-            for (int i = 0; i < numhisto; i++) {
-                histo[i] += thread_local_histo[i];
-            }
-        }
-        free(thread_local_histo);
-    }
+        for (int i = 0; i < numhisto; i++) {
+#ifdef PARALLEL
+            #pragma omp atomic
 #endif
-    // process remaining bottom-right partial block
-    // (partial_block_size_ref x partial_block_size_conf rectangle):
-    if (partial_block_size_ref * partial_block_size_conf > 0) {
-        int k;
-        double* dxs = (double*) aligned_calloc(_3_BLOCKSIZE_2, sizeof(double));
-        double* r2s = (double*) aligned_calloc(_BLOCKSIZE_2, sizeof(double));
-        _calc_distance_vectors_block(dxs, bref + nblocks_ref * _3_BLOCKSIZE,
-                                     bconf + nblocks_conf * _3_BLOCKSIZE);
-        switch (pbc_type) {
-            case PBCortho:
-                _minimum_image_ortho_lazy_block(dxs, box, half_box);
-                break;
-            case PBCtriclinic:
-                {
-                    double* aux = (double*) aligned_calloc(11 * _BLOCKSIZE_2,
-                                                           sizeof(double));
-                    _minimum_image_triclinic_lazy_block(dxs, box, aux);
-                    free(aux);
-                }
-                break;
-            default:
-                break;
-        };
-        _calc_squared_distances_block(r2s, dxs);
-        for (int i = 0; i < partial_block_size_ref; i++) {
-            for (int j = 0; j < partial_block_size_conf; j++) {
-                if (r2s[i * _BLOCKSIZE + j] < r2_max) {
-                    k = (int) (sqrt(r2s[i * _BLOCKSIZE + j]) * inverse_binw);
-                    histo[k] += 1;
-                }
-            }
+            histo[i] += local_histo[i];
         }
-        free(dxs);
-        free(r2s);
+#ifdef PARALLEL
+        #pragma omp atomic
+#endif
+        histo[numhisto - 1] += local_histo[numhisto]; // Numpy consistency
+        free(local_histo);
     }
     free(bref);
     free(bconf);
@@ -1768,16 +1772,22 @@ static void _calc_distance_histogram_vectorized(const coordinate* restrict ref,
 static void _calc_self_distance_histogram_vectorized(const coordinate* \
                                                      restrict ref, int numref,
                                                      const float* box,
-                                                     ePBC pbc_type, double binw,
+                                                     ePBC pbc_type, 
+                                                     double rmin, double rmax,
                                                      histbin* restrict histo,
                                                      int numhisto)
 {
-    double inverse_binw = 1.0 / binw;
-    double r2_max = (binw * numhisto) * (binw * numhisto);
+    assert((rmin >= 0.0) && \
+           "Minimum distance must be greater than or equal to zero");
+    assert(((rmax - rmin) > FLT_EPSILON) && \
+           "Maximum distance must be greater than minimum distance.");
     const int nblocks = numref / _BLOCKSIZE;
     const int partial_block_size = numref % _BLOCKSIZE;
     float* bref = _get_coords_in_blocks(ref, numref);
     float half_box[3] = {0.0};
+    double inverse_binw = numhisto / (rmax - rmin);
+    double r2_min = rmin * rmin;
+    double r2_max = rmax * rmax;
 
     switch (pbc_type) {
         case PBCortho:
@@ -1795,14 +1805,12 @@ static void _calc_self_distance_histogram_vectorized(const coordinate* \
 
 #ifdef PARALLEL
     #pragma omp parallel shared(histo)
-    {
-        histbin* thread_local_histo = \
-        (histbin*) aligned_calloc(numhisto + 1, sizeof(histbin));
 #endif
+    {
+        histbin* local_histo = (histbin*) calloc(numhisto + 1, sizeof(histbin));
         double* dxs = (double*) aligned_calloc(_3_BLOCKSIZE_2, sizeof(double));
         double* r2s = (double*) aligned_calloc(_BLOCKSIZE_2, sizeof(double));
         double* aux = NULL;
-        int k;
         if (pbc_type == PBCtriclinic) {
             aux = (double*) aligned_calloc(11 * _BLOCKSIZE_2, sizeof(double));
         }
@@ -1826,14 +1834,12 @@ static void _calc_self_distance_histogram_vectorized(const coordinate* \
             _calc_squared_distances_block(r2s, dxs);
             for (int i = 0; i < _BLOCKSIZE - 1; i++) {
                 for (int j = i + 1; j < _BLOCKSIZE; j++) {
-                    if (r2s[i * _BLOCKSIZE + j] < r2_max) {
-                        k = (int) (sqrt(r2s[i * _BLOCKSIZE + j]) * \
-                                   inverse_binw);
-#ifdef PARALLEL
-                        thread_local_histo[k] += 1;
-#else
-                        histo[k] += 1;
-#endif
+                    double r2 = r2s[i * _BLOCKSIZE + j];
+                    if ((r2 >= r2_min) && (r2 <= r2_max)) {
+                        int k = (int) ((sqrt(r2) - rmin) * inverse_binw);
+                        if (k >= 0) {
+                            local_histo[k] += 1;
+                        }
                     }
                 }
             }
@@ -1854,13 +1860,11 @@ static void _calc_self_distance_histogram_vectorized(const coordinate* \
                 };
                 _calc_squared_distances_block(r2s, dxs);
                 for (int i = 0; i < _BLOCKSIZE_2; i++) {
-                    if (r2s[i] < r2_max) {
-                        k = (int) (sqrt(r2s[i]) * inverse_binw);
-#ifdef PARALLEL
-                        thread_local_histo[k] += 1;
-#else
-                        histo[k] += 1;
-#endif
+                    if ((r2s[i] >= r2_min) && (r2s[i] <= r2_max)) {
+                        int k = (int) ((sqrt(r2s[i]) - rmin) * inverse_binw);
+                        if (k >= 0) {
+                            local_histo[k] += 1;
+                        }
                     }
                 }
             }
@@ -1882,14 +1886,45 @@ static void _calc_self_distance_histogram_vectorized(const coordinate* \
                 _calc_squared_distances_block(r2s, dxs);
                 for (int i = 0; i < _BLOCKSIZE; i++) {
                     for (int j = 0; j < partial_block_size; j++) {
-                        if (r2s[i * _BLOCKSIZE + j] < r2_max) {
-                            k = (int) (sqrt(r2s[i * _BLOCKSIZE + j]) * \
-                                       inverse_binw);
+                        double r2 = r2s[i * _BLOCKSIZE + j];
+                        if ((r2 >= r2_min) && (r2 <= r2_max)) {
+                            int k = (int) ((sqrt(r2) - rmin) * inverse_binw);
+                            if (k >= 0) {
+                                local_histo[k] += 1;
+                            }
+                        }
+                    }
+                }
+            }
+        }
 #ifdef PARALLEL
-                            thread_local_histo[k] += 1;
-#else
-                            histo[k] += 1;
+        #pragma omp single nowait
 #endif
+        {
+            // process remaining bottom-right partial block:
+            // ((partial_block_size - 1) x (partial_block_size - 1) triangle):
+            if (partial_block_size > 0) {
+                _calc_self_distance_vectors_block(dxs, bref + \
+                                                  nblocks * _3_BLOCKSIZE);
+                switch (pbc_type) {
+                    case PBCortho:
+                        _minimum_image_ortho_lazy_block(dxs, box, half_box);
+                        break;
+                    case PBCtriclinic:
+                            _minimum_image_triclinic_lazy_block(dxs, box, aux);
+                        break;
+                    default:
+                        break;
+                };
+                _calc_squared_distances_block(r2s, dxs);
+                for (int i = 0; i < partial_block_size - 1; i++) {
+                    for (int j = i + 1; j < partial_block_size; j++) {
+                        double r2 = r2s[i * _BLOCKSIZE + j];
+                        if ((r2 >= r2_min) && (r2 <= r2_max)) {
+                            int k = (int) ((sqrt(r2) - rmin) * inverse_binw);
+                            if (k >= 0) {
+                                local_histo[k] += 1;
+                            }
                         }
                     }
                 }
@@ -1898,50 +1933,18 @@ static void _calc_self_distance_histogram_vectorized(const coordinate* \
         free(dxs);
         free(r2s);
         free(aux);
-#ifdef PARALLEL
         // gather local results from threads
-        #pragma omp critical
-        {
-            for (int i = 0; i < numhisto; i++) {
-                histo[i] += thread_local_histo[i];
-            }
-        }
-        free(thread_local_histo);
-    }
+        for (int i = 0; i < numhisto; i++) {
+#ifdef PARALLEL
+            #pragma omp atomic
 #endif
-    // process remaining bottom-right partial block:
-    // ((partial_block_size - 1) x (partial_block_size - 1) triangle):
-    if (partial_block_size > 0) {
-        int k;
-        double* dxs = (double*) aligned_calloc(_3_BLOCKSIZE_2, sizeof(double));
-        double* r2s = (double*) aligned_calloc(_BLOCKSIZE_2, sizeof(double));
-        _calc_self_distance_vectors_block(dxs, bref + nblocks * _3_BLOCKSIZE);
-        switch (pbc_type) {
-            case PBCortho:
-                _minimum_image_ortho_lazy_block(dxs, box, half_box);
-                break;
-            case PBCtriclinic:
-                {
-                    double* aux = (double*) aligned_calloc(11 * _BLOCKSIZE_2,
-                                                           sizeof(double));
-                    _minimum_image_triclinic_lazy_block(dxs, box, aux);
-                    free(aux);
-                }
-                break;
-            default:
-                break;
-        };
-        _calc_squared_distances_block(r2s, dxs);
-        for (int i = 0; i < partial_block_size - 1; i++) {
-            for (int j = i + 1; j < partial_block_size; j++) {
-                if (r2s[i * _BLOCKSIZE + j] < r2_max) {
-                    k = (int) (sqrt(r2s[i * _BLOCKSIZE + j]) * inverse_binw);
-                    histo[k] += 1;
-                }
-            }
+            histo[i] += local_histo[i];
         }
-        free(dxs);
-        free(r2s);
+#ifdef PARALLEL
+        #pragma omp atomic
+#endif
+        histo[numhisto - 1] += local_histo[numhisto]; // Numpy consistency
+        free(local_histo);
     }
     free(bref);
 }

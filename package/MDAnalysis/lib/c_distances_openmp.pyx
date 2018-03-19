@@ -55,19 +55,21 @@ cdef extern from "calc_distances.h":
                                               double* distances)
     void _calc_distance_histogram(coordinate* ref, int numref, coordinate* conf,
                                   int numconf, float* box, PBCenum pbc_type,
-                                  double binw, histbin* histo, int numhisto)
+                                  double rmin, double rmax, histbin* histo,
+                                  int numhisto)
     void _calc_distance_histogram_vectorized(coordinate* ref, int numref,
                                              coordinate* conf, int numconf,
                                              float* box, PBCenum pbc_type,
-                                             double binw, histbin* histo,
-                                             int numhisto)
+                                             double rmin, double rmax,
+                                             histbin* histo, int numhisto)
     void _calc_self_distance_histogram(coordinate* ref, int numref, float* box,
-                                       PBCenum pbc_type, double binw,
-                                       histbin* histo, int numhisto)
+                                       PBCenum pbc_type, double rmin,
+                                       double rmax, histbin* histo,
+                                       int numhisto)
     void _calc_self_distance_histogram_vectorized(coordinate* ref, int numref,
                                                   float* box, PBCenum pbc_type,
-                                                  double binw, histbin* histo,
-                                                  int numhisto)
+                                                  double rmin, double rmax,
+                                                  histbin* histo, int numhisto)
     void _coord_transform(coordinate* coords, int numCoords, coordinate* box)
     void _calc_bond_distance(coordinate* atom1, coordinate* atom2, int numatom,
                              float* box, PBCenum pbc_type, double* distances)
@@ -129,50 +131,52 @@ def calc_self_distance_array(numpy.ndarray ref, numpy.ndarray box,
 
 def calc_distance_histogram(numpy.ndarray ref, numpy.ndarray conf,
                             numpy.ndarray box, PBCenum pbc_type,
-                            numpy.ndarray histo, bin_width):
+                            numpy.ndarray histo, r_min, r_max):
     cdef int confnum, refnum, histonum, numthreads
-    cdef double binwidth
+    cdef double rmin, rmax
     confnum = conf.shape[0]
     refnum = ref.shape[0]
     histonum = histo.shape[0]
-    binwidth = bin_width
     numthreads = openmp.omp_get_num_threads()
+    rmin = r_min
+    rmax = r_max
 
     if (refnum / numthreads) < BLOCKSIZE:
         _calc_distance_histogram(<coordinate*>ref.data, refnum,
                                  <coordinate*>conf.data, confnum,
                                  NULL if box is None else <float*>box.data,
-                                 pbc_type, binwidth, <histbin*>histo.data,
+                                 pbc_type, rmin, rmax, <histbin*>histo.data,
                                  histonum)
     else:
         _calc_distance_histogram_vectorized(<coordinate*>ref.data, refnum,
                                             <coordinate*>conf.data, confnum,
                                             NULL if box is None else \
                                             <float*>box.data, pbc_type,
-                                            binwidth, <histbin*>histo.data,
+                                            rmin, rmax, <histbin*>histo.data,
                                             histonum)
 
 def calc_self_distance_histogram(numpy.ndarray ref, numpy.ndarray box,
-                                 PBCenum pbc_type, numpy.ndarray histo,
-                                 bin_width):
+                                 PBCenum pbc_type, numpy.ndarray histo, r_min,
+                                 r_max):
     cdef int refnum, histonum, numthreads
-    cdef double binwidth
+    cdef double rmin, rmax
     refnum = ref.shape[0]
     histonum = histo.shape[0]
-    binwidth = bin_width
     numthreads = openmp.omp_get_num_threads()
+    rmin = r_min
+    rmax = r_max
 
     if (refnum / numthreads) < BLOCKSIZE:
         _calc_self_distance_histogram(<coordinate*>ref.data, refnum,
                                       NULL if box is None else <float*>box.data,
-                                      pbc_type, binwidth, <histbin*>histo.data,
-                                      histonum)
+                                      pbc_type, rmin, rmax,
+                                      <histbin*>histo.data, histonum)
     else:
         _calc_self_distance_histogram_vectorized(<coordinate*>ref.data, refnum,
                                                  NULL if box is None else \
                                                  <float*>box.data, pbc_type,
-                                                 binwidth, <histbin*>histo.data,
-                                                 histonum)
+                                                 rmin, rmax,
+                                                 <histbin*>histo.data, histonum)
 
 def coord_transform(numpy.ndarray coords,
                     numpy.ndarray box):
