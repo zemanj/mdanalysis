@@ -1612,12 +1612,28 @@ def blocks_of(a, n, m):
     # http://stackoverflow.com/a/10862636
     # but generalised to handle non square blocks.
 
+    # Check if n, m are exact integer representations:
+    if (int(n), int(m)) == (n, m):
+        n, m = int(n), int(m)
+    else:
+        raise ValueError("n, m must be exact integers. Got {}, {}"
+                         "".format(n, m))
+
+    if n <= 0 or m <= 0:
+        raise ValueError("n, m must both be positive integers. Got {}, {}"
+                         "".format(n, m))
+
+    if (a.shape[0] % n, a.shape[1] % m) != (0, 0):
+        raise ValueError("a.shape[:2] must be an integer multiple of (n, m)."
+                         " Got a.shape = {} and (n, m) = {}"
+                         "".format(a.shape, (n, m)))
+
     nblocks = a.shape[0] // n
     nblocks2 = a.shape[1] // m
 
-    if not nblocks == nblocks2:
-        raise ValueError("Must divide into same number of blocks in both"
-                         " directions.  Got {} by {}"
+    if nblocks != nblocks2:
+        raise ValueError("n and m must divide the array a into same number of"
+                         " blocks in both dimensions.  Got {} by {}"
                          "".format(nblocks, nblocks2))
 
     new_shape = (nblocks, n, m)

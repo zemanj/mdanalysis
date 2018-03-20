@@ -225,7 +225,7 @@ def _check_histogram_range(value, desc):
 
     Must be:
       iterable of length 2
-      first element must be greater than or equal to zero 
+      first element must be greater than or equal to zero
       first element must be strictly smaller than second
     """
     if len(value) != 2:
@@ -496,11 +496,6 @@ def distance_histogram(reference, configuration, range, histogram=None,
         histo = np.zeros((n_bins,), np.int64)
     else:
         raise ValueError("Either histogram or n_bins must be specified.")
-    try:
-        bin_width = float(bin_width)
-    except TypeError:
-        raise TypeError("bin_width must be either a number or a string \
-                        representing a number")
 
     pbc_type = PBCtype.none
     if box is not None:

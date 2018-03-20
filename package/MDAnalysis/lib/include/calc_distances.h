@@ -1772,7 +1772,7 @@ static void _calc_distance_histogram_vectorized(const coordinate* restrict ref,
 static void _calc_self_distance_histogram_vectorized(const coordinate* \
                                                      restrict ref, int numref,
                                                      const float* box,
-                                                     ePBC pbc_type, 
+                                                     ePBC pbc_type,
                                                      double rmin, double rmax,
                                                      histbin* restrict histo,
                                                      int numhisto)
