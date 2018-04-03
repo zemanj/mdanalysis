@@ -524,7 +524,7 @@ if __name__ == '__main__':
           packages=find_packages(),
           ext_modules=exts,
           requires=['numpy (>=1.10.4)', 'biopython (>= 1.71)', 'mmtf (>=1.0.0)',
-                    'networkx (>=1.0)', 'GridDataFormats (>=0.3.2)', 'joblib',
+                    'networkx (>=1.0)', 'GridDataFormats (>=0.4.0)', 'joblib',
                     'scipy (>=1.0.0)', 'matplotlib (>=1.5.1)'],
           # all standard requirements are available through PyPi and
           # typically can be installed without difficulties through setuptools
