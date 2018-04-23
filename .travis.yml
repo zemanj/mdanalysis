@@ -4,8 +4,7 @@ group: travis_latest
 # Only build for develop and master (and PRs)
 branches:
   only:
-    - master
-    - develop
+    - lib_distances
 
 os:
   linux
@@ -14,9 +13,9 @@ env:
   global:
     - secure: "f8EMSWeYC38elhpB4B/ddxlklEvQoycaxnt90Xw2tH/+ThdP1qteQ2vdgNFy1KL7Am/xnbrRhavI5K+ayfxJ93NoE2adaJ9f9aljXK+Oeu+buv5MVo2E2HhN9mX9opSSxiqGmnHIVYcdLP+1soIsDD78SGL7hB/u5nQ1aTzkbaM="
     - GH_DOC_BRANCH=develop
-    - GH_REPOSITORY=github.com/MDAnalysis/mdanalysis.git
+    - GH_REPOSITORY=github.com/zemanj/mdanalysis.git
     - GIT_CI_USER=TravisCI
-    - GIT_CI_EMAIL=TravisCI@mdanalysis.org
+    - GIT_CI_EMAIL=johannes.zeman@googlemail.com
     - MDA_DOCDIR=${TRAVIS_BUILD_DIR}/package/doc/html/html
     # Set default python version to avoid repetition later
     - PYTHON_VERSION=3.5
@@ -26,7 +25,7 @@ env:
     - PYTEST_LIST="testsuite/MDAnalysisTests"
     - MAIN_CMD="pytest ${PYTEST_LIST}"
     - SETUP_CMD="${PYTEST_FLAGS}"
-    - BUILD_CMD="pip install -v package/ && pip install testsuite/"
+    - BUILD_CMD="cd package/ && python setup.py install && cd ../testsuite/ && python setup.py install && cd ../"
     - CONDA_MIN_DEPENDENCIES="mmtf-python mock six biopython networkx cython joblib matplotlib scipy griddataformats hypothesis gsd"
     - CONDA_DEPENDENCIES="${CONDA_MIN_DEPENDENCIES} seaborn>=0.7.0 clustalw=2.1 netcdf4 scikit-learn coveralls"
     - CONDA_CHANNELS='biobuilds conda-forge'
