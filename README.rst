@@ -2,6 +2,13 @@
   MDAnalysis Repository README
 ================================
 
+lib_distances build status:
+
+.. image:: https://travis-ci.org/zemanj/mdanalysis.svg?branch=lib_distances
+    :target: https://travis-ci.org/zemanj/mdanalysis
+
+develop status (parent):
+
 |build| |cov| [*]_
 
 |docs| |devdocs| |usergroup| |developergroup| |anaconda| |mybinder|
