@@ -323,6 +323,19 @@ def extensions(config):
                                  define_macros=define_macros + parallel_macros,
                                  extra_compile_args=parallel_args + extra_compile_args,
                                  extra_link_args=parallel_args)
+    qgrid = MDAExtension('MDAnalysis.lib.c_qgrid',
+                             ['MDAnalysis/lib/c_qgrid' + source_suffix],
+                             include_dirs=include_dirs + ['MDAnalysis/lib/include'],
+                             libraries=['m'],
+                             define_macros=define_macros,
+                             extra_compile_args=extra_compile_args)
+    qgrid_omp = MDAExtension('MDAnalysis.lib.c_qgrid_openmp',
+                                 ['MDAnalysis/lib/c_qgrid_openmp' + source_suffix],
+                                 include_dirs=include_dirs + ['MDAnalysis/lib/include'],
+                                 libraries=['m'] + parallel_libraries,
+                                 define_macros=define_macros + parallel_macros,
+                                 extra_compile_args=parallel_args + extra_compile_args,
+                                 extra_link_args=parallel_args)
     qcprot = MDAExtension('MDAnalysis.lib.qcprot',
                           ['MDAnalysis/lib/qcprot' + source_suffix],
                           include_dirs=include_dirs,
@@ -371,7 +384,7 @@ def extensions(config):
                               libraries=["m"],
                               define_macros=define_macros,
                               extra_compile_args=extra_compile_args)
-    pre_exts = [libdcd, distances, distances_omp, qcprot,
+    pre_exts = [libdcd, distances, distances_omp, qgrid, qgrid_omp, qcprot,
                 transformation, libmdaxdr, util, encore_utils,
                 ap_clustering, spe_dimred]
 
