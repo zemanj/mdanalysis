@@ -720,7 +720,7 @@ from . import chain
 from . import CRD
 from . import DCD
 from . import DLPoly
-from . import DMS
+#from . import DMS
 from . import GMS
 from . import GRO
 from . import INPCRD

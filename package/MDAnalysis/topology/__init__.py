@@ -288,7 +288,7 @@ from . import PQRParser
 from . import GROParser
 from . import CRDParser
 from . import PDBQTParser
-from . import DMSParser
+#from . import DMSParser
 from . import TPRParser
 from . import MOL2Parser
 from . import LAMMPSParser
