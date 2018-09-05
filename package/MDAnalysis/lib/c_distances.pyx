@@ -62,6 +62,11 @@ cdef extern from "calc_distances.h":
                                              float* box, PBCenum pbc_type,
                                              double rmin, double rmax,
                                              histbin* histo, int numhisto)
+    void _calc_distance_histogram_grid_based(coordinate* ref, int numref,
+                                             coordinate* conf, int numconf,
+                                             float* box, PBCenum pbc_type,
+                                             double rmin, double rmax,
+                                             histbin* histo, int numhisto)
     void _calc_self_distance_histogram(coordinate* ref, int numref, float* box,
                                        PBCenum pbc_type, double rmin,
                                        double rmax, histbin* histo,
@@ -149,7 +154,7 @@ def calc_distance_histogram(numpy.ndarray ref, numpy.ndarray conf,
                                  pbc_type, rmin, rmax, <histbin*>histo.data,
                                  histonum)
     else:
-        _calc_distance_histogram_vectorized(<coordinate*>ref.data, refnum,
+        _calc_distance_histogram_grid_based(<coordinate*>ref.data, refnum,
                                             <coordinate*>conf.data, confnum,
                                             NULL if box is None else \
                                             <float*>box.data, pbc_type,

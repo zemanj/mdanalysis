@@ -18,7 +18,9 @@
 
 #ifndef __DISTANCES_H
 #define __DISTANCES_H
-
+/*#ifdef NDEBUG*/
+/*    #undef NDEBUG*/
+/*#endif*/
 /*
  * Memory alignment macros to support auto-vectorization using SSE and/or AVX
  */
@@ -81,6 +83,12 @@
     #define __assaligned(X) (X)
     #define __memaligned
 #endif
+
+/*
+ * In grid-based distance calculations, we use a maximum number of grid cells of
+ * 4096:
+ */
+#define __MAX_NUM_GRID_CELLS (4096)
 
 /*
  * Macro to suppress unjustified unused variable compiler warnings when variable
@@ -148,6 +156,7 @@ STATIC_ASSERT(!(_BLOCKSIZE * sizeof(float) % __MEMORY_ALIGNMENT), \
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
+/*#include <stdio.h>*/
 
 /*
  *Include OpenMP header if required:
@@ -331,7 +340,10 @@ static void _calc_distance_array(coordinate* ref, int numref, coordinate* conf,
             _triclinic_pbc(ref, numref, box);
             _triclinic_pbc(conf, numconf, box);
             break;
+        case PBCnone:
+            break;
         default:
+            //TODO: fatal error
             break;
     };
 
@@ -376,7 +388,10 @@ static void _calc_self_distance_array(coordinate* ref, int numref, float* box,
         case PBCtriclinic:
             _triclinic_pbc(ref, numref, box);
             break;
+        case PBCnone:
+            break;
         default:
+            //TODO: fatal error
             break;
     };
 
@@ -404,7 +419,7 @@ static void _calc_self_distance_array(coordinate* ref, int numref, float* box,
             };
             double rsq = dx[0] * dx[0] + dx[1] * dx[1] + dx[2] * dx[2];
             *(distances + distpos) = sqrt(rsq);
-            distpos += 1;
+            distpos++;
         }
     }
 }
@@ -433,7 +448,10 @@ static void _calc_distance_histogram(coordinate* ref, int numref,
         case PBCtriclinic:
             _triclinic_pbc(ref, numref, box);
             break;
+        case PBCnone:
+            break;
         default:
+            //TODO: fatal error
             break;
     };
 
@@ -466,7 +484,7 @@ static void _calc_distance_histogram(coordinate* ref, int numref,
                 if ((r2 >= r2_min) && (r2 <= r2_max)) {
                     int k = (int) ((sqrt(r2) - rmin) * inverse_binw);
                     if (k >= 0) {
-                        local_histo[k] += 1;
+                        local_histo[k]++;
                     }
                 }
             }
@@ -510,7 +528,10 @@ static void _calc_self_distance_histogram(coordinate* ref, int numref,
         case PBCtriclinic:
             _triclinic_pbc(ref, numref, box);
             break;
+        case PBCnone:
+            break;
         default:
+            //TODO: fatal error
             break;
     };
 #ifdef PARALLEL
@@ -542,7 +563,7 @@ static void _calc_self_distance_histogram(coordinate* ref, int numref,
                 if ((r2 >= r2_min) && (r2 <= r2_max)) {
                     int k = (int) ((sqrt(r2) - rmin) * inverse_binw);
                     if (k >= 0) {
-                        local_histo[k] += 1;
+                        local_histo[k]++;
                     }
                 }
             }
@@ -603,7 +624,10 @@ static void _calc_bond_distance(coordinate* atom1, coordinate* atom2,
             _triclinic_pbc(atom1, numatom, box);
             _triclinic_pbc(atom2, numatom, box);
             break;
+        case PBCnone:
+            break;
         default:
+            //TODO: fatal error
             break;
     };
 
@@ -647,7 +671,10 @@ static void _calc_angle(coordinate* atom1, coordinate* atom2,
             _triclinic_pbc(atom2, numatom, box);
             _triclinic_pbc(atom3, numatom, box);
             break;
+        case PBCnone:
+            break;
         default:
+            //TODO: fatal error
             break;
     };
 
@@ -745,7 +772,10 @@ static void _calc_dihedral(coordinate* atom1, coordinate* atom2,
             _triclinic_pbc(atom3, numatom, box);
             _triclinic_pbc(atom4, numatom, box);
             break;
+        case PBCnone:
+            break;
         default:
+            //TODO: fatal error
             break;
     };
 
@@ -1278,7 +1308,10 @@ static void _calc_distance_array_vectorized(const coordinate* restrict ref,
             _triclinic_pbc_vectorized(bref, numref, box);
             _triclinic_pbc_vectorized(bconf, numconf, box);
             break;
+        case PBCnone:
+            break;
         default:
+            //TODO: fatal error
             break;
     };
 
@@ -1435,7 +1468,10 @@ static void _calc_self_distance_array_vectorized(const coordinate* restrict ref,
         case PBCtriclinic:
             _triclinic_pbc_vectorized(bref, numref, box);
             break;
+        case PBCnone:
+            break;
         default:
+            //TODO: fatal error
             break;
     };
 #ifdef PARALLEL
@@ -1606,7 +1642,10 @@ static void _calc_distance_histogram_vectorized(const coordinate* restrict ref,
             _triclinic_pbc_vectorized(bref, numref, box);
             _triclinic_pbc_vectorized(bconf, numconf, box);
             break;
+        case PBCnone:
+            break;
         default:
+            //TODO: fatal error
             break;
     };
 
@@ -1645,7 +1684,7 @@ static void _calc_distance_histogram_vectorized(const coordinate* restrict ref,
                     if ((r2s[i] >= r2_min) && (r2s[i] <= r2_max)) {
                         int k = (int) ((sqrt(r2s[i]) - rmin) * inverse_binw);
                         if (k >= 0) {
-                            local_histo[k] += 1;
+                            local_histo[k]++;
                         }
                     }
                 }
@@ -1673,7 +1712,7 @@ static void _calc_distance_histogram_vectorized(const coordinate* restrict ref,
                         if ((r2 >= r2_min) && (r2 <= r2_max)) {
                             int k = (int) ((sqrt(r2) - rmin) * inverse_binw);
                             if (k >= 0) {
-                                local_histo[k] += 1;
+                                local_histo[k]++;
                             }
                         }
                     }
@@ -1707,7 +1746,7 @@ static void _calc_distance_histogram_vectorized(const coordinate* restrict ref,
                         if ((r2 >= r2_min) && (r2 <= r2_max)) {
                             int k = (int) ((sqrt(r2) - rmin) * inverse_binw);
                             if (k >= 0) {
-                                local_histo[k] += 1;
+                                local_histo[k]++;
                             }
                         }
                     }
@@ -1742,7 +1781,7 @@ static void _calc_distance_histogram_vectorized(const coordinate* restrict ref,
                         if ((r2 >= r2_min) && (r2 <= r2_max)) {
                             int k = (int) ((sqrt(r2) - rmin) * inverse_binw);
                             if (k >= 0) {
-                                local_histo[k] += 1;
+                                local_histo[k]++;
                             }
                         }
                     }
@@ -1799,7 +1838,10 @@ static void _calc_self_distance_histogram_vectorized(const coordinate* \
         case PBCtriclinic:
             _triclinic_pbc_vectorized(bref, numref, box);
             break;
+        case PBCnone:
+            break;
         default:
+            //TODO: fatal error
             break;
     };
 
@@ -1838,7 +1880,7 @@ static void _calc_self_distance_histogram_vectorized(const coordinate* \
                     if ((r2 >= r2_min) && (r2 <= r2_max)) {
                         int k = (int) ((sqrt(r2) - rmin) * inverse_binw);
                         if (k >= 0) {
-                            local_histo[k] += 1;
+                            local_histo[k]++;
                         }
                     }
                 }
@@ -1863,7 +1905,7 @@ static void _calc_self_distance_histogram_vectorized(const coordinate* \
                     if ((r2s[i] >= r2_min) && (r2s[i] <= r2_max)) {
                         int k = (int) ((sqrt(r2s[i]) - rmin) * inverse_binw);
                         if (k >= 0) {
-                            local_histo[k] += 1;
+                            local_histo[k]++;
                         }
                     }
                 }
@@ -1890,7 +1932,7 @@ static void _calc_self_distance_histogram_vectorized(const coordinate* \
                         if ((r2 >= r2_min) && (r2 <= r2_max)) {
                             int k = (int) ((sqrt(r2) - rmin) * inverse_binw);
                             if (k >= 0) {
-                                local_histo[k] += 1;
+                                local_histo[k]++;
                             }
                         }
                     }
@@ -1923,7 +1965,7 @@ static void _calc_self_distance_histogram_vectorized(const coordinate* \
                         if ((r2 >= r2_min) && (r2 <= r2_max)) {
                             int k = (int) ((sqrt(r2) - rmin) * inverse_binw);
                             if (k >= 0) {
-                                local_histo[k] += 1;
+                                local_histo[k]++;
                             }
                         }
                     }
@@ -1947,5 +1989,283 @@ static void _calc_self_distance_histogram_vectorized(const coordinate* \
         free(local_histo);
     }
     free(bref);
+}
+
+
+static void _calc_distance_histogram_grid_based(coordinate* restrict ref,
+                                                int numref,
+                                                coordinate* restrict conf,
+                                                int numconf,
+                                                float* box, ePBC pbc_type,
+                                                double rmin, double rmax,
+                                                histbin* restrict histo,
+                                                int numhisto)
+{
+    assert((rmin >= 0.0) && \
+           "Minimum distance must be greater than or equal to zero");
+    assert(((rmax - rmin) > FLT_EPSILON) && \
+           "Maximum distance must be greater than minimum distance.");
+    float grid_box[3] = {0.0, 0.0, 0.0};
+    double cell_edge_len = rmax;
+    float cell[3] = {0.0, 0.0, 0.0};
+    size_t numcells[3] = {0, 0, 0};
+    size_t numcells_tot = 1;
+    int do_brute_force = 0;
+    int use_cell_octants = 1;
+    double cell_edge_len_octant_threshold = 4.0 / 3.0 * rmax;
+
+    switch (pbc_type) {
+        case PBCortho:
+            break;
+        case PBCtriclinic:
+            //TODO: _ortho_box_from_triclinic_box(grid_box, box);
+            break;
+        case PBCnone:
+            //TODO: _ortho_box_from_coords(grid_box, ref, numref, conf, numconf);
+            break;
+        default:
+            //TODO: fatal error
+            break;
+    };
+
+    do {
+        numcells_tot = 1;
+        do_brute_force = 0;
+        for (size_t i = 0; i < 3; i++) {
+            numcells[i] = (size_t) (box[i] / cell_edge_len);
+            if (numcells[i] < 4) {
+                do_brute_force++;
+                // Check if cell_edge_len is too large for grid search:
+                if ((do_brute_force > 2) || (numcells[i] < 2)) {
+                    if (numconf < _BLOCKSIZE) {
+                        _calc_distance_histogram(ref, numref, conf, numconf,
+                                                 box, pbc_type, rmin, rmax,
+                                                 histo, numhisto);
+                    }
+                    else {
+                        _calc_distance_histogram_vectorized(ref, numref,
+                                                            conf, numconf,
+                                                            box, pbc_type,
+                                                            rmin, rmax,
+                                                            histo, numhisto);
+                    }
+                    return;
+                }
+            }
+            numcells_tot *= numcells[i];
+            cell[i] = box[i] / numcells[i];
+        }
+        // If there are too many cells, we need to increase the cell edge
+        // length. Edge lengths between 4*rmax/3 and 2*rmax are no-man's-land,
+        // where it's better to go to 2*rmax and only search cells adjacent to
+        // a reference particle's cell octant.
+        if (numcells_tot > __MAX_NUM_GRID_CELLS) {
+            cell_edge_len *= 1.1;
+            if ((cell_edge_len > cell_edge_len_octant_threshold) && \
+                (cell_edge_len < (2.0 * rmax))) {
+                cell_edge_len = 2.0 * rmax;
+            }
+        }
+    } while (numcells_tot > __MAX_NUM_GRID_CELLS);
+    assert(((numcells_tot >= 16) && (numcells_tot <= __MAX_NUM_GRID_CELLS)) && \
+            "(numcells_tot < 16) or (numcells_tot > __MAX_NUM_GRID_CELLS)");
+
+    float half_box[3] = {0.0, 0.0, 0.0};
+    double inverse_binw = numhisto / (rmax - rmin);
+    double r2_min = rmin * rmin;
+    double r2_max = rmax * rmax;
+    float inv_cell[3] = {0.0, 0.0, 0.0};
+    size_t max_neighbors[3] = {3, 3, 3};
+    size_t num_neighbor_cells = 1;
+    size_t cell_offset_y = 0;
+    size_t cell_offset_z = 0;
+
+    switch (pbc_type) {
+        case PBCortho:
+            half_box[0] = 0.5 * box[0];
+            half_box[1] = 0.5 * box[1];
+            half_box[2] = 0.5 * box[2];
+            _ortho_pbc(ref, numref, box);
+            _ortho_pbc(conf, numconf, box);
+            break;
+        case PBCtriclinic:
+            box = grid_box;
+            _triclinic_pbc(ref, numref, box);
+            _triclinic_pbc(conf, numconf, box);
+            //TODO: shift (!) particles to new ortho box
+            break;
+        case PBCnone:
+            box = grid_box;
+            //TODO: shift (!) particles to new pseudo box
+        default:
+            break;
+    };
+
+    cell_offset_y = numcells[0];
+    cell_offset_z = numcells[0] * numcells[1];
+
+    for (size_t i = 0; i < 3; i++) {
+        if (cell[i] < (2.0 * rmax)) {
+            use_cell_octants = 0;
+            break;
+        }
+    }
+
+    for (size_t i = 0; i < 3; i++){
+        inv_cell[i] = 1.0 / cell[i];
+        max_neighbors[i] -= (numcells[i] < 3);
+        num_neighbor_cells *= max_neighbors[i];
+    }
+
+/*    printf("Grid dimensions: %lu x %lu x %lu\n", numcells[0], numcells[1], numcells[2]);*/
+/*    printf("Maximum cell id: %lu\n", numcells_tot - 1);*/
+/*    printf("Max neighbors: %lu x %lu x %lu\n", max_neighbors[0], max_neighbors[1], max_neighbors[2]);*/
+/*    printf("Number of neighbor cells: %lu\n", num_neighbor_cells);*/
+
+    size_t* cellid = (size_t*) calloc(numconf, sizeof(size_t));
+    size_t* numconf_cell = (size_t*) calloc(numcells_tot, sizeof(size_t));
+    size_t* offset = (size_t*) calloc(numcells_tot + 1, sizeof(size_t));
+    coordinate* confgrid = (coordinate*) calloc(numconf, sizeof(coordinate));
+    if (!cellid || !numconf_cell || !offset || !confgrid) {
+        free(cellid);
+        free(numconf_cell);
+        free(offset);
+        free(confgrid);
+        //TODO: fatal error
+        return;
+    }
+
+    for (size_t i = 0; i < numconf; i++) {
+        size_t cid = (size_t) (conf[i][0] * inv_cell[0]) + \
+                     (size_t) (conf[i][1] * inv_cell[1]) * cell_offset_y + \
+                     (size_t) (conf[i][2] * inv_cell[2]) * cell_offset_z;
+        assert((cid < numcells_tot) && "cid >= numcells_tot");
+        cellid[i] = cid;
+        numconf_cell[cid]++;
+    }
+
+    size_t current_offset = 0;
+    for (size_t i = 0; i < numcells_tot; i++) {
+        current_offset += numconf_cell[i];
+        offset[i+1] = current_offset;
+    }
+    // DEBUG consistency check:
+    assert((current_offset == numconf) && "current_offset != numconf");
+
+    // Fill coordinates into grid:
+#ifdef PARALLEL
+    #pragma omp parallel shared(confgrid)
+#endif
+    {
+        size_t cid;
+        size_t coord_offset;
+        size_t confgrid_offset;
+#ifdef PARALLEL
+        #pragma omp for nowait
+#endif
+        for (size_t i = 0; i < numconf; i++) {
+            cid = cellid[i];
+#ifdef PARALLEL
+            #pragma omp critical
+#endif
+            {
+                coord_offset = --numconf_cell[cid];
+            }
+            confgrid_offset = offset[cid] + coord_offset;
+            assert((confgrid_offset < numconf) && "confgrid_offset >= numconf");
+            confgrid[confgrid_offset][0] = conf[i][0];
+            confgrid[confgrid_offset][1] = conf[i][1];
+            confgrid[confgrid_offset][2] = conf[i][2];
+        }
+    }
+    // consistency check (debug only):
+    for (size_t i = 0; i < numcells_tot; i++) {
+        assert((!numconf_cell[i]) && "numconf_cell != 0");
+    }
+
+    free(cellid);
+    free(numconf_cell);
+
+    if (use_cell_octants) {
+      //TODO
+      free(offset);
+      free(confgrid);
+      return;
+    }
+
+#ifdef PARALLEL
+    #pragma omp parallel shared(histo)
+#endif
+    {
+        histbin* local_histo = (histbin*) calloc(numhisto + 1, sizeof(histbin));
+        double dx[3];
+        size_t ref_cid[3];
+        size_t cid[27];
+        size_t idx = 0;
+#ifdef PARALLEL
+        #pragma omp for nowait
+#endif
+        for (size_t n = 0; n < numref; n++) {
+            ref_cid[0] = (size_t) (ref[n][0] * inv_cell[0]);
+            ref_cid[1] = (size_t) (ref[n][1] * inv_cell[1]);
+            ref_cid[2] = (size_t) (ref[n][2] * inv_cell[2]);
+            // consistency check (debug only):
+            assert((ref_cid[0] < numcells[0]) && "ref_cid[0] >= numcells[0]");
+            assert((ref_cid[1] < numcells[1]) && "ref_cid[1] >= numcells[1]");
+            assert((ref_cid[2] < numcells[2]) && "ref_cid[2] >= numcells[2]");
+            for (size_t k = 0; k < max_neighbors[2]; k++) {
+                size_t cid_z = ref_cid[2] + numcells[2] + k - 1;
+                cid_z %= numcells[2];
+                cid_z *= cell_offset_z;
+                for (size_t j = 0; j < max_neighbors[1]; j++) {
+                    size_t cid_y = ref_cid[1] + numcells[1] + j - 1;
+                    cid_y %= numcells[1];
+                    cid_y *= cell_offset_y;
+                    for (size_t i = 0; i < max_neighbors[0]; i++) {
+                        size_t cid_x = ref_cid[0] + numcells[0] + i - 1;
+                        cid_x %= numcells[0];
+                        cid[idx++] = cid_x + cid_y + cid_z;
+                        // consistency check (debug only):
+                        assert((cid[idx - 1] < numcells_tot) && "neighbor_cid >= numcells_tot");
+                    }
+                }
+            }
+            // consistency check (debug only):
+            assert((idx == num_neighbor_cells) && "idx != num_neighbor_cells");
+            idx = 0;
+            for (size_t i = 0; i < num_neighbor_cells; i++) {
+                for (size_t j = offset[cid[i]]; j < offset[cid[i] + 1]; j++) {
+                    dx[0] = confgrid[j][0] - ref[n][0];
+                    dx[1] = confgrid[j][1] - ref[n][1];
+                    dx[2] = confgrid[j][2] - ref[n][2];
+                    if (pbc_type != PBCnone) {
+                        _minimum_image_ortho_lazy(dx, box, half_box);
+                    }
+                    double r2 = dx[0] * dx[0] + dx[1] * dx[1] + dx[2] * dx[2];
+                    if ((r2 >= r2_min) && (r2 <= r2_max)) {
+                        int k = (int) ((sqrt(r2) - rmin) * inverse_binw);
+                        assert((k <= numhisto) && "k > numhisto");
+                        if (k >= 0) {
+                            local_histo[k]++;
+                        }
+                    }
+                }
+            }
+        }
+        // Gather local results:
+        for (int i = 0; i < numhisto; i++) {
+#ifdef PARALLEL
+            #pragma omp atomic
+#endif
+            histo[i] += local_histo[i];
+        }
+#ifdef PARALLEL
+        #pragma omp atomic
+#endif
+        histo[numhisto - 1] += local_histo[numhisto]; // Numpy consistency
+        free(local_histo);
+    }
+    free(offset);
+    free(confgrid);
 }
 #endif /* __DISTANCES_H */
