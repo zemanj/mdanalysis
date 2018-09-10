@@ -153,6 +153,13 @@ def calc_distance_histogram(numpy.ndarray ref, numpy.ndarray conf,
                                  NULL if box is None else <float*>box.data,
                                  pbc_type, rmin, rmax, <histbin*>histo.data,
                                  histonum)
+    elif (box is not None) and (r_max > 0.25 * box.max()):
+        _calc_distance_histogram_vectorized(<coordinate*>ref.data, refnum,
+                                            <coordinate*>conf.data, confnum,
+                                            NULL if box is None else \
+                                            <float*>box.data, pbc_type,
+                                            rmin, rmax, <histbin*>histo.data,
+                                            histonum)
     else:
         _calc_distance_histogram_grid_based(<coordinate*>ref.data, refnum,
                                             <coordinate*>conf.data, confnum,
