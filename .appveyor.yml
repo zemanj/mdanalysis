@@ -21,7 +21,7 @@ environment:
         APPVEYOR_SAVE_CACHE_ON_ERROR: true
         APPVEYOR_SKIP_FINALIZE_ON_EXIT: true
         TEST_TIMEOUT: 1000
-        PYTHON: "C:\conda"
+        PYTHON: "C:\\conda"
         MINICONDA_VERSION: "latest"
         CMD_IN_ENV: "cmd /E:ON /V:ON /C .\\ci-helpers\\appveyor\\windows_sdk.cmd"
 
