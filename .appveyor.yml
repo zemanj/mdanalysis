@@ -45,7 +45,7 @@ init:
 
 install:
     # set up a conda test environment
-    - ps: git clone --depth 1 git://github.com/astropy/ci-helpers.git
+    - ps: git clone --depth 1 git://github.com/astropy/ci-helpers.git 2>&1
     - ps: ci-helpers/appveyor/install-miniconda.ps1
     - ps: $env:PATH = "${env:PYTHON};${env:PYTHON}\Scripts;" + $env:PATH
     # deal with missing stdint.h as previously described
