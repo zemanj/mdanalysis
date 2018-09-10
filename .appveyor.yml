@@ -71,7 +71,7 @@ after_build:
     - C:\cygwin\bin\find "%LOCALAPPDATA%\pip" -type f -size +10M -delete
     - C:\cygwin\bin\find "%LOCALAPPDATA%\pip" -empty -delete
     # Show size of cache
-- C:\cygwin\bin\du -hs "%LOCALAPPDATA%\pip\Cache"
+    - C:\cygwin\bin\du -hs "%LOCALAPPDATA%\pip\Cache"
 
 on_finish:
   - ps: $blockRdp = $true; iex ((new-object net.webclient).DownloadString('https://raw.githubusercontent.com/appveyor/ci/master/scripts/enable-rdp.ps1'))
