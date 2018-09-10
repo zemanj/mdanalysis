@@ -44,31 +44,30 @@ init:
         }
 
 install:
-    # set up a conda test environment
-    - ps: git clone --depth 1 git://github.com/astropy/ci-helpers.git -q
+    # set up a conda env
+    - "git clone --depth 1 git://github.com/astropy/ci-helpers.git"
     - ps: ci-helpers/appveyor/install-miniconda.ps1
     - ps: $env:PATH = "${env:PYTHON};${env:PYTHON}\Scripts;" + $env:PATH
     # deal with missing stdint.h as previously described
     # see https://github.com/swistakm/pyimgui/blob/master/.appveyor.yml
     - ps: cp "C:\Program Files (x86)\Microsoft Visual Studio 10.0\VC\include\stdint.h" "C:\Users\appveyor\AppData\Local\Programs\Common\Microsoft\Visual C++ for Python\9.0\VC\include\stdint.h"
-    # activate test environment
     - ps: activate test
 
 build_script:
     - ps: cd package
-    - ps: python.exe setup.py develop --no-deps --user 3>&1
+    - ps: C:\conda\envs\test\python.exe setup.py develop --no-deps --user 3>&1
 
 test_script:
-    - ps: cd ..\testsuite
-    - ps: C:\conda\envs\test\python.exe setup.py develop --no-deps --user 3>&1
-    - ps: cd MDAnalysisTests
-    - ps: C:\conda\envs\test\Scripts\pytest.exe --cov=MDAnalysis --disable-pytest-warnings 3>&1
-    - ps: codecov
+    - cmd: cd ..\testsuite
+    - cmd: C:\conda\envs\test\python.exe setup.py develop --no-deps --user 3>&1
+    - cmd: cd MDAnalysisTests
+    - cmd: C:\conda\envs\test\Scripts\pytest.exe --cov=MDAnalysis --disable-pytest-warnings 3>&1
+    - cmd: codecov
 
 after_build:
     # cache cleanup
-    - ps: C:\cygwin\bin\find "%LOCALAPPDATA%\pip" -type f -mtime +360 -delete
-    - ps: C:\cygwin\bin\find "%LOCALAPPDATA%\pip" -type f -size +10M -delete
-    - ps: C:\cygwin\bin\find "%LOCALAPPDATA%\pip" -empty -delete
+    - C:\cygwin\bin\find "%LOCALAPPDATA%\pip" -type f -mtime +360 -delete
+    - C:\cygwin\bin\find "%LOCALAPPDATA%\pip" -type f -size +10M -delete
+    - C:\cygwin\bin\find "%LOCALAPPDATA%\pip" -empty -delete
     # Show size of cache
-    - ps: C:\cygwin\bin\du -hs "%LOCALAPPDATA%\pip\Cache"
+    - C:\cygwin\bin\du -hs "%LOCALAPPDATA%\pip\Cache"
