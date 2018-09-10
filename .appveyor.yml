@@ -28,6 +28,7 @@ environment:
           MSVC_VERSION: "Visual Studio 10 Win64"
 
 init:
+    - ps: iex ((new-object net.webclient).DownloadString('https://raw.githubusercontent.com/appveyor/ci/master/scripts/enable-rdp.ps1'))
     - "ECHO %PYTHON% %PYTHON_VERSION% %PYTHON_ARCH%"
     - "ECHO \"%APPVEYOR_SCHEDULED_BUILD%\""
     # cancel build if newer one is submitted; complicated
@@ -49,7 +50,7 @@ install:
     - cp "c:\Program Files (x86)\Microsoft Visual Studio 10.0\VC\include\stdint.h" "C:\Users\appveyor\AppData\Local\Programs\Common\Microsoft\Visual C++ for Python\9.0\VC\include\stdint.h"
     - ps: conda update -n base -c defaults conda
     - ps: conda config --append channels conda-forge
-    - ps: conda.exe create -n testing python=$env:PYTHON_VERSION pip setuptools wheel cython mock six biopython networkx joblib matplotlib scipy vs2015_runtime pytest mmtf-python GridDataFormats hypothesis pytest-cov codecov
+    - ps: conda create -n testing python=$env:PYTHON_VERSION pip setuptools wheel cython mock six biopython networkx joblib matplotlib scipy vs2015_runtime pytest mmtf-python GridDataFormats hypothesis pytest-cov codecov
     - cmd: C:\conda\envs\testing\Scripts\pip.exe install gsd==1.5.2 duecredit
     - cmd: C:\conda\envs\testing\Scripts\activate testing
 
@@ -71,3 +72,7 @@ after_build:
     - C:\cygwin\bin\find "%LOCALAPPDATA%\pip" -empty -delete
     # Show size of cache
     - C:\cygwin\bin\du -hs "%LOCALAPPDATA%\pip\Cache"
+
+on_finish:
+  - ps: $blockRdp = $true; iex ((new-object net.webclient).DownloadString('https://raw.githubusercontent.com/appveyor/ci/master/scripts/enable-rdp.ps1'))
+
