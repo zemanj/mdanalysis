@@ -168,6 +168,17 @@ STATIC_ASSERT(!(_BLOCKSIZE * sizeof(float) % __MEMORY_ALIGNMENT), \
     #define USED_OPENMP 0
 #endif
 
+/*
+ * Select functions by argument type
+ */
+#if __STDC_VERSION__ >= 201112L
+    #define sqrt(X) _Generic((X), long double: sqrtl, float: sqrtf, \
+                             default: sqrt)(X)
+    #define floor(X) _Generic((X), long double: floorl, float: floorf, \
+                              default: floor)(X)
+    #define round(X) _Generic((X), long double: roundl, float: roundf, \
+                              default: round)(X)
+#endif
 
 /**
  * @brief Type definition for xyz coordinates
@@ -189,6 +200,7 @@ typedef enum ePBC {
     PBCunknown
 } ePBC;
 
+
 static void _minimum_image_ortho(double *dx, float *box, float *inverse_box)
 {
     // Minimum image convention for orthogonal boxes.
@@ -200,6 +212,7 @@ static void _minimum_image_ortho(double *dx, float *box, float *inverse_box)
         }
     }
 }
+
 
 static inline void _minimum_image_ortho_lazy(double* dx, float* box,
                                              float* half_box)
@@ -220,6 +233,7 @@ static inline void _minimum_image_ortho_lazy(double* dx, float* box,
         }
     }
 }
+
 
 static inline void _minimum_image_triclinic_lazy(double *dx, float* box_vectors)
 {
@@ -256,6 +270,7 @@ static inline void _minimum_image_triclinic_lazy(double *dx, float* box_vectors)
     }
 }
 
+
 static void _ortho_pbc(coordinate* coords, int numcoords, float* box)
 {
     double s[3];
@@ -279,6 +294,7 @@ static void _ortho_pbc(coordinate* coords, int numcoords, float* box)
         coords[i][2] -= s[2] * box[2];
     }
 }
+
 
 static void _triclinic_pbc(coordinate* coords, int numcoords,
                            float* box_vectors)
@@ -320,6 +336,7 @@ static void _triclinic_pbc(coordinate* coords, int numcoords,
         coords[i][0] -= s * box_vectors[0];
     }
 }
+
 
 static void _calc_distance_array(coordinate* ref, int numref, coordinate* conf,
                                  int numconf, float* box, ePBC pbc_type,
@@ -370,6 +387,7 @@ static void _calc_distance_array(coordinate* ref, int numref, coordinate* conf,
         }
     }
 }
+
 
 static void _calc_self_distance_array(coordinate* ref, int numref, float* box,
                                       ePBC pbc_type, double* distances)
@@ -423,6 +441,7 @@ static void _calc_self_distance_array(coordinate* ref, int numref, float* box,
         }
     }
 }
+
 
 static void _calc_distance_histogram(coordinate* ref, int numref,
                                      coordinate* conf, int numconf, float* box,
@@ -504,6 +523,7 @@ static void _calc_distance_histogram(coordinate* ref, int numref,
     }
 }
 
+
 static void _calc_self_distance_histogram(coordinate* ref, int numref,
                                           float* box, ePBC pbc_type,
                                           double rmin, double rmax,
@@ -583,6 +603,7 @@ static void _calc_self_distance_histogram(coordinate* ref, int numref,
     }
 }
 
+
 static void _coord_transform(coordinate* coords, int numCoords, coordinate* box)
 {
     float new[3];
@@ -606,6 +627,7 @@ static void _coord_transform(coordinate* coords, int numCoords, coordinate* box)
         coords[i][2] = new[2];
     }
 }
+
 
 static void _calc_bond_distance(coordinate* atom1, coordinate* atom2,
                                 int numatom, float* box, ePBC pbc_type,
@@ -652,6 +674,7 @@ static void _calc_bond_distance(coordinate* atom1, coordinate* atom2,
         *(distances + i) = sqrt(rsq);
     }
 }
+
 
 static void _calc_angle(coordinate* atom1, coordinate* atom2,
                         coordinate* atom3, int numatom, float* box,
@@ -715,6 +738,7 @@ static void _calc_angle(coordinate* atom1, coordinate* atom2,
     }
 }
 
+
 static inline void _calc_dihedral_angle(double* va, double* vb, double* vc,
                                         double* result)
 {
@@ -752,6 +776,7 @@ static inline void _calc_dihedral_angle(double* va, double* vb, double* vc,
     }
     *result = atan2(y, x); //atan2 is better conditioned than acos
 }
+
 
 static void _calc_dihedral(coordinate* atom1, coordinate* atom2,
                            coordinate* atom3, coordinate* atom4, int numatom,
@@ -816,6 +841,7 @@ static void _calc_dihedral(coordinate* atom1, coordinate* atom2,
     }
 }
 
+
 /**
  * @brief Memory-aligned calloc
  *
@@ -851,6 +877,7 @@ static void* aligned_calloc(size_t num, size_t size)
     return ptr;
 #endif
 }
+
 
 /**
  * @brief Arrange coordinates in blocks of _BLOCKSIZE positions
@@ -901,6 +928,7 @@ static inline float* _get_coords_in_blocks(const coordinate* restrict coords,
     }
     return bcoords;
 }
+
 
 /**
  * @brief Moves block-aligned coordinates into the central periodic image
@@ -956,6 +984,7 @@ static void _ortho_pbc_vectorized(float* restrict coords, int numcoords,
         free(s);
     }
 }
+
 
 /**
  * @brief Moves block-aligned coordinates into the central periodic image
@@ -1066,6 +1095,7 @@ static void _triclinic_pbc_vectorized(float* restrict coords, int numcoords,
     }
 }
 
+
 /**
  * @brief Computes all distances within a block of @c _BLOCKSIZE positions
  *
@@ -1092,6 +1122,7 @@ static inline void _calc_self_distance_vectors_block(double* restrict dxs,
         }
     }
 }
+
 
 /**
  * @brief Computes all distances between two blocks of @c _BLOCKSIZE positions
@@ -1121,6 +1152,7 @@ static inline void _calc_distance_vectors_block(double* restrict dxs,
     }
 }
 
+
 /**
  * @brief Compute minimum image representations of distance vectors
  *
@@ -1145,14 +1177,13 @@ static inline void _minimum_image_ortho_lazy_block(double* restrict dxs,
             nhbx = -half_box[i];
             double* _dxs = (double*) __assaligned(dxs + i * _BLOCKSIZE_2);
             for (int j = 0; j < _BLOCKSIZE_2; j++) {
-                _dxs[j] -= ((_dxs[j] > hbx) ? bx : 0.0);
-            }
-            for (int j = 0; j < _BLOCKSIZE_2; j++) {
-                _dxs[j] += ((_dxs[j] <= nhbx) ? bx : 0.0);
+                _dxs[j] -= (_dxs[j] > hbx) * bx;
+                _dxs[j] += (_dxs[j] <= nhbx) * bx;
             }
         }
     }
 }
+
 
 /**
  * @brief Compute minimum image representations of distance vectors
@@ -1259,6 +1290,7 @@ static inline void _minimum_image_triclinic_lazy_block(double* restrict dxs,
     }
 }
 
+
 /**
  * @brief Compute squared distances from distance vectors
  *
@@ -1280,6 +1312,7 @@ static inline void _calc_squared_distances_block(double* restrict r2s,
         }
     }
 }
+
 
 static void _calc_distance_array_vectorized(const coordinate* restrict ref,
                                             int numref,
@@ -1447,6 +1480,7 @@ static void _calc_distance_array_vectorized(const coordinate* restrict ref,
     free(bconf);
 }
 
+
 static void _calc_self_distance_array_vectorized(const coordinate* restrict ref,
                                                  int numref,
                                                  const float* box,
@@ -1605,6 +1639,7 @@ static void _calc_self_distance_array_vectorized(const coordinate* restrict ref,
     }
     free(bref);
 }
+
 
 static void _calc_distance_histogram_vectorized(const coordinate* restrict ref,
                                                 int numref,
@@ -1807,6 +1842,7 @@ static void _calc_distance_histogram_vectorized(const coordinate* restrict ref,
     free(bref);
     free(bconf);
 }
+
 
 static void _calc_self_distance_histogram_vectorized(const coordinate* \
                                                      restrict ref, int numref,
