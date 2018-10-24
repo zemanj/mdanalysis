@@ -273,7 +273,7 @@ static inline void _minimum_image_triclinic_lazy(double *dx, float* box_vectors)
 
 static void _ortho_pbc(coordinate* coords, int numcoords, float* box)
 {
-    double s[3];
+    float s[3];
     float box_inverse[3];
     box_inverse[0] = ((box[0] > FLT_EPSILON) ?  1.0 / box[0] : 0.0);
     box_inverse[1] = ((box[1] > FLT_EPSILON) ?  1.0 / box[1] : 0.0);
@@ -286,9 +286,9 @@ static void _ortho_pbc(coordinate* coords, int numcoords, float* box)
     #pragma omp parallel for private(s) shared(coords)
 #endif
     for (int i = 0; i < numcoords; i++){
-        s[0] = floor(coords[i][0] * box_inverse[0]);
-        s[1] = floor(coords[i][1] * box_inverse[1]);
-        s[2] = floor(coords[i][2] * box_inverse[2]);
+        s[0] = floorf(coords[i][0] * box_inverse[0]);
+        s[1] = floorf(coords[i][1] * box_inverse[1]);
+        s[2] = floorf(coords[i][2] * box_inverse[2]);
         coords[i][0] -= s[0] * box[0];
         coords[i][1] -= s[1] * box[1];
         coords[i][2] -= s[2] * box[2];
@@ -321,18 +321,18 @@ static void _triclinic_pbc(coordinate* coords, int numcoords,
     #pragma omp parallel for shared(coords)
 #endif
     for (int i = 0; i < numcoords; i++){
-        double s;
+        float s;
         // translate coords[i] to central cell along c-axis
-        s = floor(coords[i][2] * bi8);
+        s = floorf(coords[i][2] * bi8);
         coords[i][0] -= s * box_vectors[6];
         coords[i][1] -= s * box_vectors[7];
         coords[i][2] -= s * box_vectors[8];
         // translate remainder of coords[i] to central cell along b-axis
-        s = floor(coords[i][1] * bi4 + coords[i][2] * bi7);
+        s = floorf(coords[i][1] * bi4 + coords[i][2] * bi7);
         coords[i][0] -= s * box_vectors[3];
         coords[i][1] -= s * box_vectors[4];
         // translate remainder of coords[i] to central cell along a-axis
-        s = floor(coords[i][0] * bi0 + coords[i][1] * bi3 + coords[i][2] * bi6);
+        s = floorf(coords[i][0] * bi0 + coords[i][1] * bi3 + coords[i][2] * bi6);
         coords[i][0] -= s * box_vectors[0];
     }
 }
