@@ -2326,6 +2326,6 @@ def check_box(box):
     if box.shape != (6,):
         raise ValueError("Invalid box information. Must be of the form "
                          "[lx, ly, lz, alpha, beta, gamma].")
-    if np.all(box[3:] == 90.):
+    if (box[3] == 90.) & (box[4] == 90.) & (box[5] == 90.): # faster than np.all
         return 'ortho', box[:3]
     return 'tri_vecs', triclinic_vectors(box)
