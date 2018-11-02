@@ -33,18 +33,15 @@ Contains OpenMP versions of the contents of "calc_distances.h"
 import numpy
 cimport numpy
 
-cdef extern from "string.h":
-    void* memcpy(void *dst, void *src, int len)
-
 cdef extern from "calc_distances.h":
     ctypedef float coordinate[3]
     cdef bint USED_OPENMP
     void _calc_distance_array(coordinate* ref, int numref, coordinate* conf, int numconf, double* distances)
     void _calc_distance_array_ortho(coordinate* ref, int numref, coordinate* conf, int numconf, float* box, double* distances)
     void _calc_distance_array_triclinic(coordinate* ref, int numref, coordinate* conf, int numconf, coordinate* box, double* distances)
-    void _calc_self_distance_array(coordinate* ref, int numref, double* distances, int distnum)
-    void _calc_self_distance_array_ortho(coordinate* ref, int numref, float* box, double* distances, int distnum)
-    void _calc_self_distance_array_triclinic(coordinate* ref, int numref, coordinate* box, double* distances, int distnum)
+    void _calc_self_distance_array(coordinate* ref, int numref, double* distances)
+    void _calc_self_distance_array_ortho(coordinate* ref, int numref, float* box, double* distances)
+    void _calc_self_distance_array_triclinic(coordinate* ref, int numref, coordinate* box, double* distances)
     void _coord_transform(coordinate* coords, int numCoords, coordinate* box)
     void _calc_bond_distance(coordinate* atom1, coordinate* atom2, int numatom, double* distances)
     void _calc_bond_distance_ortho(coordinate* atom1, coordinate* atom2, int numatom, float*box, double* distances)
@@ -98,34 +95,31 @@ def calc_distance_array_triclinic(numpy.ndarray ref, numpy.ndarray conf,
 
 def calc_self_distance_array(numpy.ndarray ref,
                              numpy.ndarray result):
-    cdef int refnum, distnum
+    cdef int refnum
     refnum = ref.shape[0]
-    distnum = (refnum*(refnum-1))/2
 
     _calc_self_distance_array(<coordinate*>ref.data, refnum,
-                              <double*>result.data, distnum)
+                              <double*>result.data)
 
 def calc_self_distance_array_ortho(numpy.ndarray ref,
                                    numpy.ndarray box,
                                    numpy.ndarray result):
-    cdef int refnum, distnum
+    cdef int refnum
     refnum = ref.shape[0]
-    distnum = (refnum*(refnum-1))/2
 
     _calc_self_distance_array_ortho(<coordinate*>ref.data, refnum,
                                     <float*>box.data,
-                                    <double*>result.data, distnum)
+                                    <double*>result.data)
 
 def calc_self_distance_array_triclinic(numpy.ndarray ref,
                                        numpy.ndarray box,
                                        numpy.ndarray result):
-    cdef int refnum, distnum
+    cdef int refnum
     refnum = ref.shape[0]
-    distnum = (refnum*(refnum-1))/2
 
     _calc_self_distance_array_triclinic(<coordinate*>ref.data, refnum,
                                         <coordinate*>box.data,
-                                        <double*>result.data, distnum)
+                                        <double*>result.data)
 
 def coord_transform(numpy.ndarray coords,
                     numpy.ndarray box):
