@@ -57,7 +57,7 @@ cdef extern from "calc_distances.h":
     void _calc_dihedral_triclinic(coordinate* atom1, coordinate* atom2, coordinate* atom3, coordinate* atom4, int numatom, coordinate* box, double* angles)
     void _ortho_pbc(coordinate* coords, int numcoords, float* box, float* box_inverse)
     void _triclinic_pbc(coordinate* coords, int numcoords, coordinate* box, float* box_inverse)
-    inline void minimum_image(double *dx, float *box, float *inverse_box)
+    void minimum_image(double *dx, float *box, float *inverse_box)
 
 OPENMP_ENABLED = True if USED_OPENMP else False
 
