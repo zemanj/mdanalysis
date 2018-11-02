@@ -184,6 +184,11 @@ def make_whole(atomgroup, reference_atom=None):
     cdef double vec[3]
     cdef ssize_t[:] ix_view
 
+    #initialize tri_box to silence compiler warnings:
+    tri_box[0][:] = [0.0, 0.0, 0.0]
+    tri_box[1][:] = [0.0, 0.0, 0.0]
+    tri_box[2][:] = [0.0, 0.0, 0.0]
+
     # map of global indices to local indices
     ix_view = atomgroup.ix[:]
     natoms = atomgroup.ix.shape[0]
@@ -244,7 +249,7 @@ def make_whole(atomgroup, reference_atom=None):
         newpos[ref, i] = oldpos[ref, i]
 
     nloops = 0
-    while refpoints.size() < natoms and nloops < natoms:
+    while <int>(refpoints.size()) < natoms and nloops < natoms:
         # count iterations to prevent infinite loop here
         nloops += 1
 
@@ -272,7 +277,7 @@ def make_whole(atomgroup, reference_atom=None):
                 refpoints.insert(other)
             done.insert(atom)
 
-    if refpoints.size() < natoms:
+    if <int>(refpoints.size()) < natoms:
         raise ValueError("AtomGroup was not contiguous from bonds, process failed")
     else:
         atomgroup.positions = newpos
