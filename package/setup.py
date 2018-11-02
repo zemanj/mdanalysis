@@ -321,25 +321,27 @@ def extensions(config):
         mathlib = ['m']
 
     libdcd = MDAExtension('MDAnalysis.lib.formats.libdcd',
-                          ['MDAnalysis/lib/formats/libdcd' + source_suffix],
+                          sources=['MDAnalysis/lib/formats/libdcd' + source_suffix],
                           include_dirs=include_dirs + ['MDAnalysis/lib/formats/include'],
                           define_macros=define_macros,
                           extra_compile_args=extra_compile_args)
     distances = MDAExtension('MDAnalysis.lib.c_distances',
-                             ['MDAnalysis/lib/c_distances' + source_suffix],
+                             sources=['MDAnalysis/lib/c_distances' + source_suffix,
+                                      'MDAnalysis/lib/calc_distances.c',],
                              include_dirs=include_dirs + ['MDAnalysis/lib/include'],
                              libraries=mathlib,
                              define_macros=define_macros,
                              extra_compile_args=extra_compile_args)
     distances_omp = MDAExtension('MDAnalysis.lib.c_distances_openmp',
-                                 ['MDAnalysis/lib/c_distances_openmp' + source_suffix],
+                                 sources=['MDAnalysis/lib/c_distances_openmp' + source_suffix,
+                                          'MDAnalysis/lib/calc_distances.c'],
                                  include_dirs=include_dirs + ['MDAnalysis/lib/include'],
                                  libraries=mathlib + parallel_libraries,
                                  define_macros=define_macros + parallel_macros,
                                  extra_compile_args=parallel_args + extra_compile_args,
                                  extra_link_args=parallel_args)
     qcprot = MDAExtension('MDAnalysis.lib.qcprot',
-                          ['MDAnalysis/lib/qcprot' + source_suffix],
+                          sources=['MDAnalysis/lib/qcprot' + source_suffix],
                           include_dirs=include_dirs,
                           define_macros=define_macros,
                           extra_compile_args=extra_compile_args)
@@ -403,12 +405,12 @@ def extensions(config):
                               define_macros=define_macros,
                               extra_compile_args=extra_compile_args)
     nsgrid = MDAExtension('MDAnalysis.lib.nsgrid',
-                             ['MDAnalysis/lib/nsgrid' + cpp_source_suffix],
-                             include_dirs=include_dirs,
-                             language='c++',
-                             define_macros=define_macros,
-                             extra_compile_args=cpp_extra_compile_args,
-                             extra_link_args= cpp_extra_link_args)
+                          sources=['MDAnalysis/lib/nsgrid' + cpp_source_suffix],
+                          include_dirs=include_dirs,
+                          language='c++',
+                          define_macros=define_macros,
+                          extra_compile_args=cpp_extra_compile_args,
+                          extra_link_args= cpp_extra_link_args)
     pre_exts = [libdcd, distances, distances_omp, qcprot,
                 transformation, libmdaxdr, util, encore_utils,
                 ap_clustering, spe_dimred, cutil, augment, nsgrid]
