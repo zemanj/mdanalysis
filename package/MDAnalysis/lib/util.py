@@ -208,8 +208,9 @@ from numpy.testing import assert_equal
 import inspect
 
 from ..exceptions import StreamWarning, DuplicateWarning
-from ._cutil import unique_int_1d
-
+from ._cutil import unique_int_1d, aligned_empty, aligned_zeros, aligned_copy, \
+                    asaligned, aligned_result_array_1d, \
+                    aligned_result_array_2d, isaligned, MEMORY_ALIGNMENT
 
 # Python 3.0, 3.1 do not have the builtin callable()
 try:

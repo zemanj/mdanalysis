@@ -25,6 +25,8 @@
 import cython
 import numpy as np
 cimport numpy as np
+np.import_array()
+
 from libc.math cimport sqrt
 
 from MDAnalysis import NoDataError
@@ -35,16 +37,28 @@ from libcpp.vector cimport vector
 from cython.operator cimport dereference as deref
 
 
-__all__ = ['unique_int_1d', 'make_whole', 'find_fragments']
+__all__ = ['unique_int_1d', 'isaligned', 'aligned_empty', 'aligned_zeros',
+           'aligned_copy', 'asaligned', 'aligned_result_array_1d',
+           'aligned_result_array_2d', 'MEMORY_ALIGNMENT', 'make_whole',
+           'find_fragments']
 
-cdef extern from "calc_distances.h":
+cdef extern from "numpy/arrayobject.h":
+    void PyArray_ENABLEFLAGS(np.ndarray arr, int flags)
+cdef extern from "typedefs.h":
     ctypedef float coordinate[3]
+cdef extern from "memalign.h":
+    const size_t MEMALIGN "MEMORY_ALIGNMENT"
+    const bint USED_MEMALIGN
+    void* aligned_malloc(size_t size)
+#    void* aligned_calloc(size_t num, size_t size)
+cdef extern from "calc_distances.h":
     void minimum_image(double *x, float *box, float *inverse_box)
     void minimum_image_triclinic(double *dx, coordinate *box)
 
 ctypedef cset[int] intset
 ctypedef cmap[int, intset] intmap
 
+MEMORY_ALIGNMENT = MEMALIGN
 
 @cython.boundscheck(False) # turn off bounds-checking for entire function
 @cython.wraparound(False)  # turn off negative index wrapping for entire function
@@ -87,6 +101,123 @@ def unique_int_1d(np.int64_t[:] values):
         result = unique_int_1d(np.sort(result))
 
     return np.array(result)
+
+
+cpdef inline bint isaligned(np.ndarray a):
+    cdef void* ptr = <void*> a.data
+    cdef bint aligned = not (<np.intp_t> ptr % MEMALIGN)
+    return aligned
+
+
+@cython.boundscheck(False)
+@cython.wraparound(False)
+cpdef np.ndarray aligned_empty(shape, dtype=float):
+    # check if dtype is compatible with alignment:
+    dtype = np.dtype(dtype)
+    cdef size_t alignment = dtype.alignment
+    cdef size_t itemsize = dtype.itemsize
+    if MEMALIGN % alignment:
+        raise TypeError("Alignment {} is incompatible with dtype {} requiring "
+                        "alignment {}.".format(MEMALIGN, dtype, alignment))
+    # construct padded byte array:
+    cdef size_t nbytes = np.prod(shape) * itemsize
+    cdef np.ndarray byte_array = np.empty(nbytes + MEMALIGN, dtype=np.byte)
+    # construct aligned array:
+    cdef void* ptr
+    ptr = <void*>byte_array.data
+    cdef size_t byte_offset = (MEMALIGN - (<size_t>ptr % MEMALIGN)) % MEMALIGN
+    cdef np.ndarray array
+    if nbytes > 0:
+        array = byte_array[byte_offset:byte_offset + nbytes].view(dtype=dtype)
+    else:
+        # workaround for zero-length arrays
+        array = byte_array[byte_offset:byte_offset + itemsize].view(dtype=dtype)
+        array = array[0:0]
+    array = array.reshape(shape)
+    ptr = <void*>array.data
+    if <size_t>ptr % MEMALIGN:
+        raise RuntimeError("Failed to create {}-byte aligned array."
+                           "".format(MEMALIGN))
+    if not array.flags['CARRAY']:
+        raise RuntimeError("{}-byte aligned array is not a proper C array."
+                           "".format(MEMALIGN))
+    return array
+
+
+@cython.boundscheck(False)
+@cython.wraparound(False)
+def aligned_zeros(shape, dtype=float):
+    # check if dtype is compatible with alignment:
+    dtype = np.dtype(dtype)
+    cdef size_t alignment = dtype.alignment
+    cdef size_t itemsize = dtype.itemsize
+    if MEMALIGN % alignment:
+        raise TypeError("Alignment {} is incompatible with dtype {} requiring "
+                        "alignment {}.".format(MEMALIGN, dtype, alignment))
+    # construct padded byte array:
+    cdef size_t nbytes = np.prod(shape) * itemsize
+    cdef np.ndarray byte_array = np.zeros(nbytes + MEMALIGN - 1, dtype=np.byte)
+    # construct aligned array:
+    cdef void* ptr
+    ptr = <void*>byte_array.data
+    cdef size_t byte_offset = (MEMALIGN - (<size_t>ptr % MEMALIGN)) % MEMALIGN
+    cdef np.ndarray array
+    if nbytes > 0:
+        array = byte_array[byte_offset:byte_offset + nbytes].view(dtype=dtype)
+    else:
+        # workaround for zero-length arrays
+        array = byte_array[byte_offset:byte_offset + itemsize].view(dtype=dtype)
+        array = array[0:0]
+    array = array.reshape(shape)
+    ptr = <void*>array.data
+    if <size_t>ptr % MEMALIGN:
+        raise RuntimeError("Failed to create {}-byte aligned array."
+                           "".format(MEMALIGN))
+    if not array.flags['CARRAY']:
+        raise RuntimeError("{}-byte aligned array is not a proper C array."
+                           "".format(MEMALIGN))
+    return array
+
+
+def aligned_copy(a, dtype=None, casting='same_kind'):
+    if dtype is None:
+        dtype = a.dtype
+    else:
+        dtype = np.dtype(dtype)
+    cdef np.ndarray target = aligned_empty(a.shape, dtype=dtype)
+    np.copyto(target, a, casting=casting)
+    return target
+
+
+def asaligned(a, dtype=None, casting='unsafe', copy=True):
+    if not copy and (dtype is None or dtype == a.dtype) and isaligned(a) and \
+        a.flags['CARRAY']:
+        return a
+    return aligned_copy(a, dtype=dtype, casting=casting)
+
+
+def aligned_result_array_1d(size_t n):
+    cdef np.float64_t[::1] result_view
+    cdef np.ndarray[dtype=np.float64_t, ndim=1] result_array
+    if USED_MEMALIGN:
+        result_view = <np.float64_t[:n]>aligned_malloc(n * sizeof(np.float64_t))
+        result_array = np.asarray(result_view)
+        PyArray_ENABLEFLAGS(result_array, np.NPY_OWNDATA)
+        return result_array
+    else:
+        return aligned_empty(n, np.float64)
+
+
+def aligned_result_array_2d(size_t n, size_t m):
+    cdef np.float64_t[:, ::1] result_view
+    cdef np.ndarray[dtype=np.float64_t, ndim=2] result_array
+    if USED_MEMALIGN:
+        result_view = <np.float64_t[:n, :m:1]>aligned_malloc(n * m * sizeof(np.float64_t))
+        result_array = np.asarray(result_view)
+        PyArray_ENABLEFLAGS(result_array, np.NPY_OWNDATA)
+        return result_array
+    else:
+        return aligned_empty(n, np.float64)
 
 
 cdef intset difference(intset a, intset b):
