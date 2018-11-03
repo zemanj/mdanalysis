@@ -93,8 +93,13 @@
     #define USED_MEMALIGN 0
 #endif
 
+#include "static_assert.h"
 #include <stdlib.h>
 #include <string.h>
+
+static_assert(((MEMORY_ALIGNMENT > 0) && \
+              !(MEMORY_ALIGNMENT & (MEMORY_ALIGNMENT - 1))), \
+              "MEMORY_ALIGNMENT is not a positive power of 2");
 
 #ifdef __cplusplus
 extern "C" {
