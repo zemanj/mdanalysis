@@ -78,11 +78,22 @@
     #else
         #define __memaligned
     #endif
+// pointer alignment check macro:
+    #define __chkaligned(X) \
+                do { \
+                    if (((size_t) (X)) % MEMORY_ALIGNMENT) { \
+                        fprintf(stderr, \
+                                "coords array is not %d-byte aligned.\n", \
+                                MEMORY_ALIGNMENT); \
+                        exit(1); \
+                    } \
+                } while(0)
 // If we cannot use memory alignment at all, disable all related macros:
 #else
     #define __attaligned
     #define __assaligned(X) (X)
     #define __memaligned
+    #define __chkaligned(X)
 #endif
 
 // USED_MEMALIGN macro for Cython to check if aligned memory is used
@@ -94,6 +105,7 @@
 #endif
 
 #include "static_assert.h"
+#include <stdio.h>  // we want to be able to throw errors
 #include <stdlib.h>
 #include <string.h>
 
