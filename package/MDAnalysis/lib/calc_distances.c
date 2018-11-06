@@ -21,7 +21,7 @@
  */
 #include "calc_distances.h"
 
-void _ortho_pbc(coordinate* __restrict__ coords, int numcoords, float* __restrict__ box, float* __restrict__ box_inverse)
+void _ortho_pbc(coordinate* restrict coords, int numcoords, float* restrict box, float* restrict box_inverse)
 {
     __chkaligned(coords);
     coords = (coordinate*) __assaligned(coords);

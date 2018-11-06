@@ -58,6 +58,8 @@
 // Unlike GCC's __builtin_assume_aligned, Intel's __assume_aligned macro doesn't
 // return its first argument, so we keep it disabled for now.
         #define __assaligned(X) (X)
+// Intel pointer restriction:
+        #define restrict __restrict
 // GCC >= 4.7 and Clang-specific alignment macros:
     #elif (defined __GNUC__ && ((__GNUC__ > 4) || \
           ((__GNUC__ == 4) && (__GNUC_MINOR__ >= 7)))) || \
@@ -66,10 +68,12 @@
                 __attribute__((__aligned__(MEMORY_ALIGNMENT)))
         #define __assaligned(X) \
                 (__builtin_assume_aligned((X), MEMORY_ALIGNMENT))
+// GCC/Clang pointer restriction:
+        #define restrict __restrict__
 // Disable alignment macros for all other compilers:
     #else
         #define __attaligned
-        #define __assaligned(X) (X)
+        #define __assaligned(X) (X)   
     #endif
 // If C11 is supported, use _Alignas() macro:
     #if __STDC_VERSION__ >= 201112L
@@ -90,6 +94,7 @@
                 } while(0)
 // If we cannot use memory alignment at all, disable all related macros:
 #else
+    #define restrict
     #define __attaligned
     #define __assaligned(X) (X)
     #define __memaligned
