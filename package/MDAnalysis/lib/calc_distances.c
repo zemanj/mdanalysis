@@ -21,22 +21,51 @@
  */
 #include "calc_distances.h"
 
-void _ortho_pbc(coordinate* coords, int numcoords, float* box, float* box_inverse)
+void _ortho_pbc(coordinate* __restrict__ coords, int numcoords, float* __restrict__ box, float* __restrict__ box_inverse)
 {
-  int i, s[3];
-  // Moves all coordinates to within the box boundaries for a orthogonal box
-#ifdef PARALLEL
-#pragma omp parallel for private(i, s) shared(coords)
-#endif
-  for (i=0; i < numcoords; i++){
-    s[0] = floor(coords[i][0] * box_inverse[0]);
-    s[1] = floor(coords[i][1] * box_inverse[1]);
-    s[2] = floor(coords[i][2] * box_inverse[2]);
-    coords[i][0] -= s[0] * box[0];
-    coords[i][1] -= s[1] * box[1];
-    coords[i][2] -= s[2] * box[2];
-  }
+    __chkaligned(coords);
+    coords = (coordinate*) __assaligned(coords);
+    int nblocks = numcoords / BLOCKSIZE;
+    int nblocked = nblocks * BLOCKSIZE;
+    int nremaining = numcoords - nblocked;
+    #ifdef PARALLEL
+    #pragma omp parallel shared(coords)
+    #endif
+    {
+        float __memaligned s[3*BLOCKSIZE] __attaligned;
+        float __memaligned _box[3*BLOCKSIZE] __attaligned;
+        float __memaligned _box_inverse[3*BLOCKSIZE] __attaligned;
+        float* _coords __attaligned;
+        int i, j, n;
+        for(i=0; i<BLOCKSIZE; ++i) {
+            for (j=0; j<3; j++) {
+                _box[i*3+j] = box[j];
+                _box_inverse[i*3+j] = box_inverse[j];
+            }
+        }
+    #ifdef PARALLEL
+        #pragma omp for nowait
+    #endif
+        for (n=0; n<nblocks; n++) {
+            _coords = __assaligned((float*) (coords + n * BLOCKSIZE));
+            for (i=0; i<3*BLOCKSIZE; i++){
+                s[i] = floor(_coords[i] * _box_inverse[i]);
+                _coords[i] -= s[i] * _box[i];
+            }
+        }
+    #ifdef PARALLEL
+        #pragma omp single nowait
+    #endif
+        {
+            _coords = __assaligned((float*) (coords + nblocked));
+            for (i=0; i < 3*nremaining; i++){
+                s[i] = floor(_coords[i] * _box_inverse[i]);
+                _coords[i] -= s[i] * _box[i];
+            }
+        }
+    }
 }
+
 
 void _triclinic_pbc(coordinate* coords, int numcoords, coordinate* box, float* box_inverse)
 {

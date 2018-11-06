@@ -35,6 +35,13 @@
   #define USED_OPENMP 0
 #endif
 
+// Process coordinates in blocks of 32 to support auto-vectorization
+#define BLOCKSIZE 32
+
+// Assert that BLOCKSIZE * sizeof(float) is divisible by MEMORY_ALIGNMENT:
+static_assert(!(BLOCKSIZE * sizeof(float) % MEMORY_ALIGNMENT), \
+"BLOCKSIZE * sizeof(float) is not an integer multiple of MEMORY_ALIGNMENT!");
+
 #ifdef __cplusplus
 extern "C" {
 #endif
