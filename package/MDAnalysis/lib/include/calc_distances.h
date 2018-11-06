@@ -24,7 +24,6 @@
  
 #include "memalign.h"
 #include "typedefs.h"
-#include "calc_distances.h"
 
 #include <math.h>
 #include <float.h>
