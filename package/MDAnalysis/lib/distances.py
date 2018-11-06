@@ -162,9 +162,9 @@ def _check_result_array(result, shape):
     if result.dtype != np.float64:
         raise TypeError("Result array must be of type numpy.float64, got {}."
                         "".format(result.dtype))
-# The following two lines would break a lot of tests. WHY?!
-#    if not coords.flags['C_CONTIGUOUS']:
-#        raise ValueError("{0} is not C-contiguous.".format(desc))
+    if not result.flags['CARRAY']:
+        raise ValueError("Result array is not a proper C array (either "
+                         "non-contiguous, not writable, or misaligned).")
     return result
 
 

@@ -35,7 +35,7 @@ from MDAnalysis.tests.datafiles import PSF, DCD, TRIC
 
 class TestCheckResultArray(object):
 
-    ref = np.zeros(1, dtype=np.float64)
+    ref = np.zeros(3, dtype=np.float64)
 
     def test_check_result_array_pass(self):
         # Assert input array is returned if it has correct shape and dtype:
@@ -61,6 +61,13 @@ class TestCheckResultArray(object):
             res = distances._check_result_array(ref_wrong_dtype, self.ref.shape)
             assert err.msg == ("Result array must be of type numpy.float64, "
                                "got {}.".format(wrong_dtype))
+
+    def test_check_result_array_strided(self):
+        strided = self.ref[::2]
+        with pytest.raises(ValueError) as err:
+            res = distances._check_result_array(strided, strided.shape)
+            assert err.msg == ("Result array is not a proper C array (either "
+                               "non-contiguous, not writable, or misaligned).")
 
 
 @pytest.mark.parametrize('coord_dtype', (np.float32, np.float64))
