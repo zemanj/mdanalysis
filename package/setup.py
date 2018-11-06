@@ -245,6 +245,20 @@ def detect_openmp():
         print("Did not detect OpenMP support.")
     return hasopenmp
 
+def detect_c11_support():
+    """Does this compiler support the C11 standard?"""
+    print("Attempting to autodetect C11 support... ", end="")
+    compiler = new_compiler()
+    extra_postargs = ['-std=c11']
+    hasc11 = hasfunction(compiler,
+                         '_Static_assert((__STDC_VERSION__ - 0) >= 201112L, \
+                         "__STDC_VERSION__ must be at least 201112L")',
+                         extra_postargs=extra_postargs)
+    if hasc11:
+        print("Compiler supports C11")
+    else:
+        print("Did not detect C11 support.")
+    return hasc11
 
 def using_clang():
     """Will we be using a clang compiler?"""
@@ -259,7 +273,11 @@ def extensions(config):
     use_cython = config.get('use_cython', default=not is_release)
     use_openmp = config.get('use_openmp', default=True)
 
-    extra_compile_args = ['-std=c99', '-ffast-math', '-O3', '-funroll-loops']
+    stdflag = '-std=c99'
+    hasc11 = detect_c11_support()
+    if hasc11:
+        stdflag = '-std=c11'
+    extra_compile_args = [stdflag, '-ffast-math', '-O3', '-funroll-loops']
     define_macros = []
     if config.get('debug_cflags', default=False):
         extra_compile_args.extend(['-Wall', '-pedantic'])
