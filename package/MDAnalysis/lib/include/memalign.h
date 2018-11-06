@@ -93,7 +93,11 @@
     #define __attaligned
     #define __assaligned(X) (X)
     #define __memaligned
-    #define __chkaligned(X)
+    #ifdef __cplusplus
+        #define __chkaligned(X) (static_cast<void> (0))
+    #else
+        #define __chkaligned(X) ((void) (0))
+    #endif
 #endif
 
 // USED_MEMALIGN macro for Cython to check if aligned memory is used
