@@ -1989,10 +1989,14 @@ def check_coords(*coord_names, **options):
                     raise ValueError("{}(): {}.shape must be (n, 3), got {}."
                                      "".format(fname, argname, coords.shape))
             try:
-                coords = coords.astype(np.float32, order='C', copy=enforce_copy)
-            except ValueError:
-                raise TypeError("{}(): {}.dtype must be convertible to float32,"
-                                " got {}.".format(fname, argname, coords.dtype))
+                coords = asaligned(coords, dtype=np.float32, copy=enforce_copy)
+            except ValueError as verr:
+                if (coords.dtype == np.float32):
+                    raise verr
+                else:
+                    raise TypeError("{}(): {}.dtype must be convertible to "
+                                    "float32, got {}.".format(fname, argname,
+                                                              coords.dtype))
             return coords, is_single
 
         @wraps(func)
