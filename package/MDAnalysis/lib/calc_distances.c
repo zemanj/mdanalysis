@@ -48,7 +48,7 @@ void _ortho_pbc(coordinate* restrict coords, int numcoords, float* restrict box,
     #endif
         for (n=0; n<nblocks; n++) {
             _coords = __assaligned((float*) (coords + n * BLOCKSIZE));
-            for (i=0; i<3*BLOCKSIZE; i++){
+            for (i=0; i<3*BLOCKSIZE; i++) {
                 s[i] = floor(_coords[i] * _box_inverse[i]);
                 _coords[i] -= s[i] * _box[i];
             }
@@ -58,7 +58,7 @@ void _ortho_pbc(coordinate* restrict coords, int numcoords, float* restrict box,
     #endif
         {
             _coords = __assaligned((float*) (coords + nblocked));
-            for (i=0; i < 3*nremaining; i++){
+            for (i=0; i < 3*nremaining; i++) {
                 s[i] = floor(_coords[i] * _box_inverse[i]);
                 _coords[i] -= s[i] * _box[i];
             }
