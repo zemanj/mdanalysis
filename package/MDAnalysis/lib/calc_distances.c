@@ -23,19 +23,58 @@
 
 void _ortho_pbc(coordinate* restrict coords, int numcoords, float* restrict box, float* restrict box_inverse)
 {
-    __chkaligned(coords);
-    coords = (coordinate*) __assaligned(coords);
-    int nblocks = numcoords / BLOCKSIZE;
-    int nblocked = nblocks * BLOCKSIZE;
-    int nremaining = numcoords - nblocked;
-    #ifdef PARALLEL
+    /*
+     * The coords array is not guaranteed to be memory-aligned, so we divide it
+     * into three regions:
+     *   1. One region extending from the beginning up to (but not including)
+     *      the first memory-aligned coordinate
+     *   2. One region starting at the first aligned coordinate and comprising
+     *      as many memory-aligned blocks of BLOCKSIZE coordinates as possible
+     *   3. One region containing the last partial block at the end of the
+     *      coords array
+     */
+    size_t p, byte_offset;
+    int nbefore = 0;
+    int nblocks = 0;
+    int nblocked = 0;
+    int nremaining = 0;
+    // compute end of first region (nbefore):
+    p = (size_t) coords;
+    byte_offset = (MEMORY_ALIGNMENT - (p % MEMORY_ALIGNMENT)) % MEMORY_ALIGNMENT;
+    while (byte_offset % sizeof(coordinate)) {
+        byte_offset += MEMORY_ALIGNMENT;
+    }
+    nbefore = byte_offset / sizeof(coordinate);
+    // make sure the end of the first region is bound by the number of
+    // coordinates:
+    if (nbefore > numcoords) {
+        nbefore = numcoords;
+    }
+    else {
+        // compute the number of blocks in the second region:
+        nremaining = numcoords - nbefore;
+        nblocks = nremaining / BLOCKSIZE;
+        // and the number of coordinates in the third region:
+        nblocked = nblocks * BLOCKSIZE;
+        nremaining -= nblocked;
+        // if there are no blocks in the second region, add the third to the
+        // first region instead:
+        if (nblocks == 0) {
+            nbefore += nremaining;
+            nremaining = 0;
+        }
+    }
+#ifdef PARALLEL
+/*    double t0 = omp_get_wtime();*/
     #pragma omp parallel shared(coords)
-    #endif
+#endif
     {
-        float __memaligned s[3*BLOCKSIZE] __attaligned;
+        // Have each thread prepare memory-aligned auxiliary arrays with enough
+        // elements to work with one coordinate block:
+        int __memaligned s[3*BLOCKSIZE] __attaligned;
         float __memaligned _box[3*BLOCKSIZE] __attaligned;
         float __memaligned _box_inverse[3*BLOCKSIZE] __attaligned;
-        float* _coords __attaligned;
+        float* restrict _coords = (float*) coords;
         int i, j, n;
         for(i=0; i<BLOCKSIZE; ++i) {
             for (j=0; j<3; j++) {
@@ -43,27 +82,43 @@ void _ortho_pbc(coordinate* restrict coords, int numcoords, float* restrict box,
                 _box_inverse[i*3+j] = box_inverse[j];
             }
         }
-    #ifdef PARALLEL
-        #pragma omp for nowait
-    #endif
-        for (n=0; n<nblocks; n++) {
-            _coords = __assaligned((float*) (coords + n * BLOCKSIZE));
-            for (i=0; i<3*BLOCKSIZE; i++) {
-                s[i] = floor(_coords[i] * _box_inverse[i]);
+#ifdef PARALLEL
+        #pragma omp single nowait
+#endif
+        {
+            // loop over first region
+            for (i=0; i < 3*nbefore; i++) {
+                s[i] = floorf(_coords[i] * _box_inverse[i]);
                 _coords[i] -= s[i] * _box[i];
             }
         }
-    #ifdef PARALLEL
+#ifdef PARALLEL
+        #pragma omp for nowait
+#endif
+        // parallel loop over aligned blocks in second region
+        for (n=0; n<nblocks; n++) {
+            _coords = __assaligned((float*) (coords + nbefore + n * BLOCKSIZE));
+            for (i=0; i<3*BLOCKSIZE; i++) {
+                s[i] = floorf(_coords[i] * _box_inverse[i]);
+                _coords[i] -= s[i] * _box[i];
+            }
+        }
+#ifdef PARALLEL
         #pragma omp single nowait
-    #endif
+#endif
         {
-            _coords = __assaligned((float*) (coords + nblocked));
+            // loop over third region
+            _coords = __assaligned((float*) (coords + nbefore + nblocked));
             for (i=0; i < 3*nremaining; i++) {
-                s[i] = floor(_coords[i] * _box_inverse[i]);
+                s[i] = floorf(_coords[i] * _box_inverse[i]);
                 _coords[i] -= s[i] * _box[i];
             }
         }
     }
+/*#ifdef PARALLEL*/
+/*    double t = omp_get_wtime() - t0;*/
+/*    printf("%.18lf\n", t);*/
+/*#endif*/
 }
 
 
