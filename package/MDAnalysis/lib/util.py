@@ -1924,7 +1924,7 @@ def check_coords(*coord_names, **options):
     >>> @check_coords('coords1', 'coords2')
     ... def coordsum(coords1, coords2):
     ...     assert coords1.dtype == np.float32
-    ...     assert coords2.flags['C_CONTIGUOUS']
+    ...     assert coords2.flags['CARRAY']
     ...     return coords1 + coords2
     ...
     >>> # automatic dtype conversion:
@@ -1989,7 +1989,7 @@ def check_coords(*coord_names, **options):
                     raise ValueError("{}(): {}.shape must be (n, 3), got {}."
                                      "".format(fname, argname, coords.shape))
             try:
-                coords = asaligned(coords, dtype=np.float32, copy=enforce_copy)
+                coords = coords.astype(np.float32, copy=enforce_copy)
             except ValueError as verr:
                 if (coords.dtype == np.float32):
                     raise verr
