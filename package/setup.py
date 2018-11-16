@@ -277,7 +277,7 @@ def extensions(config):
     hasc11 = detect_c11_support()
     if hasc11:
         stdflag = '-std=c11'
-    extra_compile_args = [stdflag, '-ffast-math', '-O3', '-funroll-loops']
+    extra_compile_args = [stdflag, '-ffast-math', '-O3', '-funroll-loops', '-Wl,-z,now']
     define_macros = []
     if config.get('debug_cflags', default=False):
         extra_compile_args.extend(['-Wall', '-pedantic'])
