@@ -65,7 +65,6 @@ void _ortho_pbc(coordinate* restrict coords, int numcoords, float* restrict box,
         }
     }
 #ifdef PARALLEL
-/*    double t0 = omp_get_wtime();*/
     #pragma omp parallel shared(coords)
 #endif
     {
@@ -88,7 +87,11 @@ void _ortho_pbc(coordinate* restrict coords, int numcoords, float* restrict box,
         {
             // loop over first region
             for (i=0; i < 3*nbefore; i++) {
+#ifdef __AVX__
                 s[i] = floorf(_coords[i] * _box_inverse[i]);
+#else
+                s[i] =  (int) (_coords[i] * _box_inverse[i]) - (_coords[i] < 0);
+#endif
                 _coords[i] -= s[i] * _box[i];
             }
         }
@@ -99,7 +102,11 @@ void _ortho_pbc(coordinate* restrict coords, int numcoords, float* restrict box,
         for (n=0; n<nblocks; n++) {
             _coords = __assaligned((float*) (coords + nbefore + n * BLOCKSIZE));
             for (i=0; i<3*BLOCKSIZE; i++) {
+#ifdef __AVX__
                 s[i] = floorf(_coords[i] * _box_inverse[i]);
+#else
+                s[i] =  (int) (_coords[i] * _box_inverse[i]) - (_coords[i] < 0);
+#endif
                 _coords[i] -= s[i] * _box[i];
             }
         }
@@ -110,15 +117,15 @@ void _ortho_pbc(coordinate* restrict coords, int numcoords, float* restrict box,
             // loop over third region
             _coords = __assaligned((float*) (coords + nbefore + nblocked));
             for (i=0; i < 3*nremaining; i++) {
+#ifdef __AVX__
                 s[i] = floorf(_coords[i] * _box_inverse[i]);
+#else
+                s[i] =  (int) (_coords[i] * _box_inverse[i]) - (_coords[i] < 0);
+#endif
                 _coords[i] -= s[i] * _box[i];
             }
         }
     }
-/*#ifdef PARALLEL*/
-/*    double t = omp_get_wtime() - t0;*/
-/*    printf("%.18lf\n", t);*/
-/*#endif*/
 }
 
 
