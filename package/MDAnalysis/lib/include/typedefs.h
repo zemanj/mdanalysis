@@ -20,8 +20,8 @@
  * J. Comput. Chem. 32 (2011), 2319--2327, doi:10.1002/jcc.21787
  */
 
-#ifndef __TYPEDEFS_H
-#define __TYPEDEFS_H
+#ifndef TYPEDEFS_H_
+#define TYPEDEFS_H_
 
 #ifdef __cplusplus
 extern "C" {
@@ -33,4 +33,4 @@ typedef float coordinate[3];
 }
 #endif
 
-#endif /*__TYPEDEFS_H*/
+#endif /*TYPEDEFS_H_*/

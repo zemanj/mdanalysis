@@ -19,8 +19,8 @@
  * MDAnalysis: A Toolkit for the Analysis of Molecular Dynamics Simulations.
  * J. Comput. Chem. 32 (2011), 2319--2327, doi:10.1002/jcc.21787
  */
-#ifndef __ALIGNMENT_H
-#define __ALIGNMENT_H
+#ifndef ALIGNMENT_H_
+#define ALIGNMENT_H_
 
 /*
  * Memory alignment macros to support cache-aligned operations and
@@ -182,4 +182,4 @@ static inline void* aligned_calloc(size_t num, size_t size)
 }
 #endif
 
-#endif /*__ALIGNMENT_H*/
+#endif /*ALIGNMENT_H_*/

@@ -19,8 +19,8 @@
  * MDAnalysis: A Toolkit for the Analysis of Molecular Dynamics Simulations.
  * J. Comput. Chem. 32 (2011), 2319--2327, doi:10.1002/jcc.21787
  */
- #ifndef __CALC_DISTANCES_H
- #define __CALC_DISTANCES_H
+ #ifndef CALC_DISTANCES_H_
+ #define CALC_DISTANCES_H_
  
 #include "memalign.h"
 #include "typedefs.h"
@@ -165,4 +165,4 @@ void _calc_dihedral_triclinic(coordinate* atom1, coordinate* atom2,
 }
 #endif
 
-#endif /*__CALC_DISTANCES_H*/
+#endif /*CALC_DISTANCES_H_*/
