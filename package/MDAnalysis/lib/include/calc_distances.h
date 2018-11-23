@@ -42,6 +42,9 @@
 static_assert(!(BLOCKSIZE * sizeof(float) % MEMORY_ALIGNMENT), \
 "BLOCKSIZE * sizeof(float) is not an integer multiple of MEMORY_ALIGNMENT!");
 
+// parallel code is only faster for a large number of coordinates (~5000)
+#define ORTHO_PBC_PARALLEL_THRESHOLD 5000
+
 #ifdef __cplusplus
 extern "C" {
 #endif
