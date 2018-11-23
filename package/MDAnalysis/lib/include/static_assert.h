@@ -19,20 +19,29 @@
  * MDAnalysis: A Toolkit for the Analysis of Molecular Dynamics Simulations.
  * J. Comput. Chem. 32 (2011), 2319--2327, doi:10.1002/jcc.21787
  */
-#ifndef __STATIC_ASSERT_H
-#define __STATIC_ASSERT_H
-
-#include <assert.h>
+#ifndef STATIC_ASSERT_H_
+#define STATIC_ASSERT_H_
 
 /*
- * Enable static (i.e., compile-time) assertions for C standards <C11.
+ * This header file provides a custom static_assert(expr, msg) macro if not
+ * available, therefore enable static (i.e., compile-time) assertions for
+ * C standard < C11 and C++ standard < C++11.
+ *
  * Taken in part from
  * http://www.pixelbeat.org/programming/gcc/static_assert.html
  * (GNU All-Permissive License)
  */
 
+// Include appropriate header if required:
+#ifndef __cplusplus
+    #include <assert.h>
+#elif !defined(__cpp_static_assert)
+    #include <cassert>
+#endif
+
+// Define static_assert() macro if required:
 #if !defined(static_assert) && !defined(__cpp_static_assert)
-    #if __STDC_VERSION__ >= 201112L
+    #if defined(__STDC_VERSION__) && (__STDC_VERSION__  >= 201112L)
         #define static_assert(e, m) _Static_assert(e, m)
     #else
         #define ASSERT_CONCAT_(a, b) a##b
@@ -50,4 +59,4 @@
     #endif
 #endif
 
-#endif /*__STATIC_ASSERT_H*/
+#endif /*STATIC_ASSERT_H_*/
