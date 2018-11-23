@@ -54,6 +54,7 @@ import shutil
 import tempfile
 import warnings
 import platform
+import subprocess as sp
 
 # Make sure I have the right Python version.
 if sys.version_info[:2] < (2, 7):
@@ -76,6 +77,7 @@ else:
 RELEASE = "0.19.3-dev"
 
 is_release = 'dev' not in RELEASE
+
 
 # Handle cython modules
 try:
@@ -194,9 +196,10 @@ def get_numpy_include():
     return np.get_include()
 
 
-def hasfunction(cc, funcname, include=None, extra_postargs=None):
-    # From http://stackoverflow.com/questions/
-    #            7018879/disabling-output-when-compiling-with-distutils
+def hasfunction(cc, funcname, include=None, extra_postargs=None,
+                return_output=False):
+    # Taken in part from http://stackoverflow.com/questions/
+    # 7018879/disabling-output-when-compiling-with-distutils
     tmpdir = tempfile.mkdtemp(prefix='hasfunction-')
     devnull = oldstderr = None
     try:
@@ -204,22 +207,32 @@ def hasfunction(cc, funcname, include=None, extra_postargs=None):
             fname = os.path.join(tmpdir, 'funcname.c')
             with open(fname, 'w') as f:
                 if include is not None:
-                    f.write('#include {0!s}\n'.format(include))
+                    if isinstance(include, list):
+                        for inc in include:
+                            f.write('#include {0!s}\n'.format(inc))
+                    else:
+                        f.write('#include {0!s}\n'.format(inc))
                 f.write('int main(void) {\n')
                 f.write('    {0!s};\n'.format(funcname))
                 f.write('}\n')
-            # Redirect stderr to /dev/null to hide any error messages
-            # from the compiler.
-            # This will have to be changed if we ever have to check
-            # for a function on Windows.
-            devnull = open('/dev/null', 'w')
+            # Hide compiler error messages by redirecting stderr to /dev/null:
+            devnull = open(os.devnull, 'w')
             oldstderr = os.dup(sys.stderr.fileno())
             os.dup2(devnull.fileno(), sys.stderr.fileno())
             objects = cc.compile([fname], output_dir=tmpdir,
                                  extra_postargs=extra_postargs)
-            cc.link_executable(objects, os.path.join(tmpdir, "a.out"))
+            exec_path = os.path.join(tmpdir, "a.out")
+            cc.link_executable(objects, exec_path)
         except Exception:
+            if return_output:
+                return False, ""
             return False
+        if return_output:
+            try:
+                output = sp.check_output(exec_path, stderr=devnull)
+            except Exception:
+                return True, ""
+            return True, output
         return True
     finally:
         if oldstderr is not None:
@@ -231,23 +244,52 @@ def hasfunction(cc, funcname, include=None, extra_postargs=None):
 
 def detect_openmp():
     """Does this compiler support OpenMP parallelization?"""
-    print("Attempting to autodetect OpenMP support... ", end="")
+    print("Detecting OpenMP support... ", end="")
     compiler = new_compiler()
     customize_compiler(compiler)
-    compiler.add_library('gomp')
-    include = '<omp.h>'
-    extra_postargs = ['-fopenmp']
-    hasopenmp = hasfunction(compiler, 'omp_get_num_threads()', include=include,
-                            extra_postargs=extra_postargs)
-    if hasopenmp:
-        print("Compiler supports OpenMP")
+    include = ['<omp.h>', '<stdio.h>']
+    if os.name == 'nt':
+        extra_postargs = ['/openmp']
     else:
-        print("Did not detect OpenMP support.")
-    return hasopenmp
+        compiler.add_library('gomp')
+        extra_postargs = ['-fopenmp']
+    funcname = ('omp_get_num_threads();\n'
+                '#ifndef _OPENMP\n'
+                '#define _OPENMP 0\n'
+                '#endif\n'
+                'printf("%d", (_OPENMP +0))')
+    hasopenmp, version = hasfunction(compiler, funcname, include=include,
+                                     extra_postargs=extra_postargs,
+                                     return_output=True)
+    if hasopenmp:
+        omp_versions = {199810: 1.0,
+                        200203: 2.0,
+                        200505: 2.5,
+                        200805: 3.0,
+                        201107: 3.1,
+                        201307: 4.0,
+                        201511: 4.5,
+                        201811: 5.0}
+        max_version = max(omp_versions.keys())
+        try:
+            version = int(version)
+            if version > max_version:
+                version = omp_versions[max_version]
+                print("found OpenMP version > {}".format(version))
+            else:
+                version = omp_versions[version]
+                print("success (version {}).".format(version))
+        except Exception:
+            version = 0.0
+            print("success (unknown version).")
+    else:
+        version = 0.0
+        print("not available.")
+    return hasopenmp, version
 
 def detect_c11_support():
     """Does this compiler support the C11 standard?"""
-    print("Attempting to autodetect C11 support... ", end="")
+    print("Detecting C11 support... ", end="")
     compiler = new_compiler()
     extra_postargs = ['-std=c11']
     hasc11 = hasfunction(compiler,
@@ -255,9 +297,9 @@ def detect_c11_support():
                          "__STDC_VERSION__ must be at least 201112L")',
                          extra_postargs=extra_postargs)
     if hasc11:
-        print("Compiler supports C11")
+        print("success.")
     else:
-        print("Did not detect C11 support.")
+        print("not available.")
     return hasc11
 
 def using_clang():
@@ -273,15 +315,19 @@ def extensions(config):
     use_cython = config.get('use_cython', default=not is_release)
     use_openmp = config.get('use_openmp', default=True)
 
-    stdflag = '-std=c99'
-    hasc11 = detect_c11_support()
-    if hasc11:
-        stdflag = '-std=c11'
-    extra_compile_args = [stdflag, '-ffast-math', '-O3', '-funroll-loops', '-Wl,-z,now']
+    if os.name == 'nt':
+        extra_compile_args = ['/fp:fast', '/O2']
+    else:
+        stdflag = '-std=c11' if detect_c11_support() else '-std=c99'
+        extra_compile_args = [stdflag, '-ffast-math', '-O3', '-funroll-loops',
+                              '-Wl,-z,now']
     define_macros = []
     if config.get('debug_cflags', default=False):
-        extra_compile_args.extend(['-Wall', '-pedantic'])
         define_macros.extend([('DEBUG', '1')])
+        if os.name == 'nt':
+            extra_compile_args.extend(['/Wall'])
+        else:
+            extra_compile_args.extend(['-Wall', '-pedantic'])
 
     # allow using architecture specific instructions. This allows people to
     # build optimized versions of MDAnalysis.
@@ -307,14 +353,26 @@ def extensions(config):
         ('_FILE_OFFSET_BITS', '64')
     ]
 
-    has_openmp = detect_openmp()
+    has_openmp, version = detect_openmp()
 
     if use_openmp and not has_openmp:
-        print('No openmp compatible compiler found default to serial build.')
+        print('No OpenMP-compatible compiler found, skipping parallel build.')
 
-    parallel_args = ['-fopenmp'] if has_openmp and use_openmp else []
-    parallel_libraries = ['gomp'] if has_openmp and use_openmp else []
-    parallel_macros = [('PARALLEL', None)] if has_openmp and use_openmp else []
+    if has_openmp and use_openmp:
+        parallel_macros = [('PARALLEL', None)]
+        if os.name == 'nt':
+            parallel_args = ['/openmp']
+            parallel_libraries = []
+            extra_link_args = []
+        else:
+            parallel_args = ['-fopenmp']
+            parallel_libraries = ['gomp']
+            extra_link_args = parallel_args
+    else:
+        parallel_macros = []
+        parallel_args = []
+        parallel_libraries = []
+        extra_link_args = []
 
     if use_cython:
         print('Will attempt to use Cython.')
@@ -357,7 +415,7 @@ def extensions(config):
                                  libraries=mathlib + parallel_libraries,
                                  define_macros=define_macros + parallel_macros,
                                  extra_compile_args=parallel_args + extra_compile_args,
-                                 extra_link_args=parallel_args)
+                                 extra_link_args=extra_link_args)
     qcprot = MDAExtension('MDAnalysis.lib.qcprot',
                           sources=['MDAnalysis/lib/qcprot' + source_suffix],
                           include_dirs=include_dirs,
@@ -634,4 +692,4 @@ if __name__ == '__main__':
                 os.unlink(cythonized)
             except OSError as err:
                 print("Warning: failed to delete cythonized file {0}: {1}. "
-                    "Moving on.".format(cythonized, err.strerror))
+                      "Moving on.".format(cythonized, err.strerror))
