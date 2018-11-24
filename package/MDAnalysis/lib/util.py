@@ -208,9 +208,8 @@ from numpy.testing import assert_equal
 import inspect
 
 from ..exceptions import StreamWarning, DuplicateWarning
-from ._cutil import unique_int_1d, aligned_empty, aligned_zeros, aligned_copy, \
-                    asaligned, aligned_result_array_1d, \
-                    aligned_result_array_2d, isaligned, MEMORY_ALIGNMENT
+from ._cutil import unique_int_1d
+
 
 # Python 3.0, 3.1 do not have the builtin callable()
 try:
@@ -1989,14 +1988,10 @@ def check_coords(*coord_names, **options):
                     raise ValueError("{}(): {}.shape must be (n, 3), got {}."
                                      "".format(fname, argname, coords.shape))
             try:
-                coords = coords.astype(np.float32, copy=enforce_copy)
-            except ValueError as verr:
-                if (coords.dtype == np.float32):
-                    raise verr
-                else:
-                    raise TypeError("{}(): {}.dtype must be convertible to "
-                                    "float32, got {}.".format(fname, argname,
-                                                              coords.dtype))
+                coords = coords.astype(np.float32, order='C', copy=enforce_copy)
+            except ValueError:
+                raise TypeError("{}(): {}.dtype must be convertible to float32,"
+                                " got {}.".format(fname, argname, coords.dtype))
             return coords, is_single
 
         @wraps(func)

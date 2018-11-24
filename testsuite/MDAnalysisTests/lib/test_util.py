@@ -38,8 +38,7 @@ import MDAnalysis as mda
 import MDAnalysis.lib.util as util
 import MDAnalysis.lib.mdamath as mdamath
 from MDAnalysis.lib.util import (cached, static_variables, warn_if_not_unique,
-                                 check_coords, asaligned, isaligned,
-                                 aligned_zeros, aligned_empty)
+                                 check_coords)
 from MDAnalysis.core.topologyattrs import Bonds
 from MDAnalysis.exceptions import NoDataError, DuplicateWarning
 
@@ -1342,9 +1341,9 @@ class TestCheckCoords(object):
     prec = 6
 
     def test_default_options(self):
-        a_in = aligned_zeros(3, dtype=np.float32)
-        b_in = asaligned(np.ones(3, dtype=np.float32))
-        b_in2 = asaligned(np.ones((2, 3), dtype=np.float32))
+        a_in = np.zeros(3, dtype=np.float32)
+        b_in = np.ones(3, dtype=np.float32)
+        b_in2 = np.ones((2, 3), dtype=np.float32)
 
         @check_coords('a','b')
         def func(a, b):
@@ -1369,17 +1368,15 @@ class TestCheckCoords(object):
 
     def test_enforce_copy(self):
 
-        a_2d = asaligned(np.ones((1, 3), dtype=np.float32))
-        b_1d = aligned_zeros(3, dtype=np.float32)
-        c_2d = aligned_zeros((1, 6), dtype=np.float32)[:, ::2]
-        d_2d = aligned_zeros((1, 3), dtype=np.int64)
-        e_2d = aligned_zeros((1, 4), dtype=np.float32)[:,1:]
+        a_2d = np.ones((1, 3), dtype=np.float32)
+        b_1d = np.zeros(3, dtype=np.float32)
+        c_2d = np.zeros((1, 6), dtype=np.float32)[:, ::2]
+        d_2d = np.zeros((1, 3), dtype=np.int64)
 
-        @check_coords('a', 'b', 'c', 'd', 'e', enforce_copy=False)
-        def func(a, b, c, d, e):
+        @check_coords('a', 'b', 'c', 'd', enforce_copy=False)
+        def func(a, b, c, d):
             # Assert that if enforce_copy is False:
-            # no copy is made if input shape, order, dtype, and alignment are
-            # correct:
+            # no copy is made if input shape, order, and dtype are correct:
             assert a is a_2d
             # a copy is made if input shape has to be changed:
             assert b is not b_1d
@@ -1387,20 +1384,18 @@ class TestCheckCoords(object):
             assert c is not c_2d
             # a copy is made if input dtype has to be changed:
             assert d is not d_2d
-            # a copy is made if input alignment has to be changed:
-            assert e is not e_2d
             # Assert correct dtype conversion:
             assert d.dtype == np.float32
             assert_almost_equal(d, d_2d, self.prec)
             # Assert all shapes are converted to (1, 3):
-            assert a.shape == b.shape == c.shape == d.shape == e.shape == (1, 3)
-            return a + b + c + d + e
+            assert a.shape == b.shape == c.shape == d.shape == (1, 3)
+            return a + b + c + d
 
         # Call func() to:
         # - test the above assertions
         # - ensure that input of single coordinates is simultaneously possible
         #   with different shapes (3,) and (1, 3)
-        res = func(a_2d, b_1d, c_2d, d_2d, e_2d)
+        res = func(a_2d, b_1d, c_2d, d_2d)
         # Since some inputs are not 1d, even though reduce_result_if_single is
         # True, the result must have shape (1, 3):
         assert res.shape == (1, 3)
@@ -1414,12 +1409,12 @@ class TestCheckCoords(object):
             pass
 
         with pytest.raises(ValueError) as err:
-            func(aligned_zeros(3, dtype=np.float32))
+            func(np.zeros(3, dtype=np.float32))
             assert err.msg == ("func(): a.shape must be (n, 3), got (3,).")
 
     def test_no_convert_single(self):
 
-        a_1d = asaligned(np.arange(-3, 0, dtype=np.float32))
+        a_1d = np.arange(-3, 0, dtype=np.float32)
 
         @check_coords('a', enforce_copy=False, convert_single=False)
         def func(a):
@@ -1434,7 +1429,7 @@ class TestCheckCoords(object):
 
     def test_no_reduce_result_if_single(self):
 
-        a_1d = aligned_zeros(3, dtype=np.float32)
+        a_1d = np.zeros(3, dtype=np.float32)
 
         # Test without shape conversion:
         @check_coords('a', enforce_copy=False, convert_single=False,
@@ -1457,8 +1452,8 @@ class TestCheckCoords(object):
 
     def test_no_check_lengths_match(self):
 
-        a_2d = aligned_zeros((1, 3), dtype=np.float32)
-        b_2d = aligned_zeros((3, 3), dtype=np.float32)
+        a_2d = np.zeros((1, 3), dtype=np.float32)
+        b_2d = np.zeros((3, 3), dtype=np.float32)
 
         @check_coords('a', 'b', enforce_copy=False, check_lengths_match=False)
         def func(a, b):
@@ -1473,8 +1468,8 @@ class TestCheckCoords(object):
 
         a_inv_dtype = np.array([['hello', 'world', '!']])
         a_inv_type = [[0., 0., 0.]]
-        a_inv_shape_1d = aligned_zeros(6, dtype=np.float32)
-        a_inv_shape_2d = aligned_zeros((3, 2), dtype=np.float32)
+        a_inv_shape_1d = np.zeros(6, dtype=np.float32)
+        a_inv_shape_2d = np.zeros((3, 2), dtype=np.float32)
 
         @check_coords('a')
         def func(a):
@@ -1502,7 +1497,7 @@ class TestCheckCoords(object):
 
     def test_usage_with_kwargs(self):
 
-        a_2d = aligned_zeros((1, 3), dtype=np.float32)
+        a_2d = np.zeros((1, 3), dtype=np.float32)
 
         @check_coords('a', enforce_copy=False)
         def func(a, b, c=0):
