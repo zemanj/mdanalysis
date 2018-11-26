@@ -21,6 +21,19 @@
  */
 #include "calc_distances.h"
 
+/*
+ * With AVX, floorf() vectorizes nicely but without AVX, integer casting
+ * and subtracting the sign is a lot faster. this function will always yield
+ * the faster implementation.
+ */
+static inline int _floorf(float x) {
+#ifdef __AVX__
+            return (int) floorf(x);
+#else
+            return (int) x - (x < 0);
+#endif
+}
+
 void _ortho_pbc(coordinate* restrict coords, int numcoords, float* restrict box, float* restrict box_inverse)
 {
     /*
@@ -32,29 +45,16 @@ void _ortho_pbc(coordinate* restrict coords, int numcoords, float* restrict box,
      *      as many memory-aligned blocks of BLOCKSIZE coordinates as possible
      *   3. One region containing the last partial block at the end of the
      *      coords array
-     *
-     * With AVX, floorf() vectorizes nicely but without AVX, integer casting
-     * and subtracting the sign is a lot faster. The code automatically chooses
-     * the faster implementation.
      */
-    size_t p, byte_offset;
-    int nbefore = 0;
+    // compute end of first region (nbefore):
+    int nbefore = (int) first_aligned_index((void*) coords, (size_t) numcoords,
+                                            sizeof(coordinate));
     int nblocks = 0;
     int nblocked = 0;
     int nremaining = 0;
-    // compute end of first region (nbefore):
-    p = (size_t) coords;
-    byte_offset = (MEMORY_ALIGNMENT - (p % MEMORY_ALIGNMENT)) % MEMORY_ALIGNMENT;
-    while (byte_offset % sizeof(coordinate)) {
-        byte_offset += MEMORY_ALIGNMENT;
-    }
-    nbefore = byte_offset / sizeof(coordinate);
     // make sure the end of the first region is bound by the number of
     // coordinates:
-    if (nbefore > numcoords) {
-        nbefore = numcoords;
-    }
-    else {
+    if (nbefore < numcoords) {
         // compute the number of blocks in the second region:
         nremaining = numcoords - nbefore;
         nblocks = nremaining / BLOCKSIZE;
@@ -75,44 +75,30 @@ void _ortho_pbc(coordinate* restrict coords, int numcoords, float* restrict box,
     {
         // Have each thread prepare memory-aligned auxiliary arrays with enough
         // elements to work with one coordinate block:
-        int __memaligned s[3*BLOCKSIZE] __attaligned;
         float __memaligned _box[3*BLOCKSIZE] __attaligned;
         float __memaligned _box_inverse[3*BLOCKSIZE] __attaligned;
         float* restrict _coords = (float*) coords;
-        int i, j, n;
-        for(i=0; i<BLOCKSIZE; ++i) {
-            for (j=0; j<3; j++) {
-                _box[i*3+j] = box[j];
-                _box_inverse[i*3+j] = box_inverse[j];
-            }
+        for(int i=0; i<BLOCKSIZE; ++i) {
+            memcpy(&_box[3*i], box, 3*sizeof(float));
+            memcpy(&_box_inverse[3*i], box_inverse, 3*sizeof(float));
         }
 
         // loop over first region
 #ifdef PARALLEL
         #pragma omp single nowait  // never worth parallelizing
 #endif
-        for (i=0; i < 3*nbefore; i++) {
-#ifdef __AVX__
-            s[i] = floorf(_coords[i] * _box_inverse[i]);
-#else
-            s[i] =  (int) (_coords[i] * _box_inverse[i]) - (_coords[i] < 0);
-#endif
-            _coords[i] -= s[i] * _box[i];
+        for (int i=0; i < 3*nbefore; i++) {
+            _coords[i] -= _floorf(_coords[i] * _box_inverse[i]) * _box[i];
         }
 
         // loop over aligned blocks in second region
 #ifdef PARALLEL
         #pragma omp for nowait
 #endif
-        for (n=0; n<nblocks; n++) {
+        for (int n=0; n<nblocks; n++) {
             _coords = __assaligned((float*) (coords + nbefore + n * BLOCKSIZE));
-            for (i=0; i<3*BLOCKSIZE; i++) {  // this loop vectorizes nicely
-#ifdef __AVX__
-                s[i] = floorf(_coords[i] * _box_inverse[i]);
-#else
-                s[i] =  (int) (_coords[i] * _box_inverse[i]) - (_coords[i] < 0);
-#endif
-                _coords[i] -= s[i] * _box[i];
+            for (int i=0; i<3*BLOCKSIZE; i++) {  // this loop vectorizes nicely
+                _coords[i] -= _floorf(_coords[i] * _box_inverse[i]) * _box[i];
             }
         }
 
@@ -121,13 +107,8 @@ void _ortho_pbc(coordinate* restrict coords, int numcoords, float* restrict box,
 #ifdef PARALLEL
         #pragma omp single nowait  // never worth parallelizing
 #endif
-        for (i=0; i < 3*nremaining; i++) {
-#ifdef __AVX__
-            s[i] = floorf(_coords[i] * _box_inverse[i]);
-#else
-            s[i] =  (int) (_coords[i] * _box_inverse[i]) - (_coords[i] < 0);
-#endif
-            _coords[i] -= s[i] * _box[i];
+        for (int i=0; i < 3*nremaining; i++) {
+            _coords[i] -= _floorf(_coords[i] * _box_inverse[i]) * _box[i];
         }
     }
 }
