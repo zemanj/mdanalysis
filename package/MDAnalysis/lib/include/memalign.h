@@ -184,7 +184,7 @@ __attmalloc static inline void* aligned_calloc(size_t num, size_t size)
 }
 
 /**
- * @brief Return the index of the first memory-aligned array element
+ * @brief Return index of first memory-aligned array element
  *
  * Return the index of the first element that has an alignment of
  * @c MEMORY_ALIGNMENT bytes in an @p array containing @len elements with a size

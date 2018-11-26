@@ -78,7 +78,8 @@ void _ortho_pbc(coordinate* restrict coords, int numcoords, float* restrict box,
         float __memaligned _box[3*BLOCKSIZE] __attaligned;
         float __memaligned _box_inverse[3*BLOCKSIZE] __attaligned;
         float* restrict _coords = (float*) coords;
-        for(int i=0; i<BLOCKSIZE; ++i) {
+        int i, n;
+        for(i=0; i<BLOCKSIZE; ++i) {
             memcpy(&_box[3*i], box, 3*sizeof(float));
             memcpy(&_box_inverse[3*i], box_inverse, 3*sizeof(float));
         }
@@ -87,7 +88,7 @@ void _ortho_pbc(coordinate* restrict coords, int numcoords, float* restrict box,
 #ifdef PARALLEL
         #pragma omp single nowait  // never worth parallelizing
 #endif
-        for (int i=0; i < 3*nbefore; i++) {
+        for (i=0; i < 3*nbefore; i++) {
             _coords[i] -= _floorf(_coords[i] * _box_inverse[i]) * _box[i];
         }
 
@@ -95,9 +96,9 @@ void _ortho_pbc(coordinate* restrict coords, int numcoords, float* restrict box,
 #ifdef PARALLEL
         #pragma omp for nowait
 #endif
-        for (int n=0; n<nblocks; n++) {
+        for (n=0; n<nblocks; n++) {
             _coords = __assaligned((float*) (coords + nbefore + n * BLOCKSIZE));
-            for (int i=0; i<3*BLOCKSIZE; i++) {  // this loop vectorizes nicely
+            for (i=0; i<3*BLOCKSIZE; i++) {  // this loop vectorizes nicely
                 _coords[i] -= _floorf(_coords[i] * _box_inverse[i]) * _box[i];
             }
         }
@@ -107,7 +108,7 @@ void _ortho_pbc(coordinate* restrict coords, int numcoords, float* restrict box,
 #ifdef PARALLEL
         #pragma omp single nowait  // never worth parallelizing
 #endif
-        for (int i=0; i < 3*nremaining; i++) {
+        for (i=0; i < 3*nremaining; i++) {
             _coords[i] -= _floorf(_coords[i] * _box_inverse[i]) * _box[i];
         }
     }
