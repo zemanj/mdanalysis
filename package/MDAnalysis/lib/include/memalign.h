@@ -60,6 +60,8 @@
         #define __assaligned(X) (X)
 // Intel pointer restriction:
         #define restrict __restrict
+// Disable malloc attribute for Intel:
+        #define __attmalloc
 // GCC >= 4.7 and Clang-specific alignment macros:
     #elif (defined __GNUC__ && ((__GNUC__ > 4) || \
           ((__GNUC__ == 4) && (__GNUC_MINOR__ >= 7)))) || \
@@ -70,6 +72,8 @@
                 (__builtin_assume_aligned((X), MEMORY_ALIGNMENT))
 // GCC/Clang pointer restriction:
         #define restrict __restrict__
+// GCC/Clang malloc attribute:
+        #define __attmalloc __attribute__((malloc))
 // Disable alignment macros for all other compilers:
     #else
         #define __attaligned
@@ -87,7 +91,7 @@
                 do { \
                     if (((size_t) (X)) % MEMORY_ALIGNMENT) { \
                         fprintf(stderr, \
-                                "coords array is not %d-byte aligned.\n", \
+                                "Pointer is not %d-byte aligned.\n", \
                                 MEMORY_ALIGNMENT); \
                         exit(1); \
                     } \
@@ -98,8 +102,9 @@
     #define __attaligned
     #define __assaligned(X) (X)
     #define __memaligned
+    #define __attmalloc
     #ifdef __cplusplus
-        #define __chkaligned(X) (static_cast<void> (0))
+        #define __chkaligned(X) (static_cast<void>(0))
     #else
         #define __chkaligned(X) ((void) (0))
     #endif
@@ -137,7 +142,7 @@ extern "C" {
  * alignment is not guaranteed. If this is the case, the macro @c USE_ALIGNMENT
  * will be undefined, i.e., it can be used to check for guaranteed alignment.
  */
-static inline void* aligned_malloc(size_t size)
+__attmalloc static inline void* aligned_malloc(size_t size)
 {
 #ifdef USE_ALIGNMENT
     #ifdef USE_C11_ALIGNMENT
@@ -163,7 +168,7 @@ static inline void* aligned_malloc(size_t size)
  * alignment is not guaranteed. If this is the case, the macro @c USE_ALIGNMENT
  * will be undefined, i.e., it can be used to check for guaranteed alignment.
  */
-static inline void* aligned_calloc(size_t num, size_t size)
+__attmalloc static inline void* aligned_calloc(size_t num, size_t size)
 {
 #ifdef USE_ALIGNMENT
     size *= num;
@@ -176,6 +181,29 @@ static inline void* aligned_calloc(size_t num, size_t size)
 #else
     return calloc(num, size);
 #endif
+}
+
+/**
+ * @brief Return the index of the first memory-aligned array element
+ *
+ * Return the index of the first element that has an alignment of
+ * @c MEMORY_ALIGNMENT bytes in an @p array containing @len elements with a size
+ * of @p item_size bytes.
+ * This function is intended to be used for manual loop peeling.
+ */
+static inline size_t first_aligned_index(void* array, size_t len,
+                                         size_t item_size)
+{
+    size_t offset = (MEMORY_ALIGNMENT - (((size_t) array) % MEMORY_ALIGNMENT)) \
+                    % MEMORY_ALIGNMENT;
+    size_t max_offset = len * item_size;
+    while ((offset % item_size) && (offset < max_offset)) {
+        offset += MEMORY_ALIGNMENT;
+    }
+    if (offset > max_offset) {
+        offset = max_offset;
+    }
+    return offset / item_size;
 }
 
 #ifdef __cplusplus
