@@ -75,8 +75,8 @@ void _ortho_pbc(coordinate* restrict coords, int numcoords, float* restrict box,
     {
         // Have each thread prepare memory-aligned auxiliary arrays with enough
         // elements to work with one coordinate block:
-        float __memaligned _box[3*BLOCKSIZE] __attaligned;
-        float __memaligned _box_inverse[3*BLOCKSIZE] __attaligned;
+        float _memaligned _box[3*BLOCKSIZE] _attaligned;
+        float _memaligned _box_inverse[3*BLOCKSIZE] _attaligned;
         float* restrict _coords = (float*) coords;
         int i, n;
         for(i=0; i<BLOCKSIZE; ++i) {
@@ -97,14 +97,14 @@ void _ortho_pbc(coordinate* restrict coords, int numcoords, float* restrict box,
         #pragma omp for nowait
 #endif
         for (n=0; n<nblocks; n++) {
-            _coords = __assaligned((float*) (coords + nbefore + n * BLOCKSIZE));
+            _coords = _assaligned((float*) (coords + nbefore + n * BLOCKSIZE));
             for (i=0; i<3*BLOCKSIZE; i++) {  // this loop vectorizes nicely
                 _coords[i] -= _floorf(_coords[i] * _box_inverse[i]) * _box[i];
             }
         }
 
         // loop over third region
-        _coords = __assaligned((float*) (coords + nbefore + nblocked));
+        _coords = _assaligned((float*) (coords + nbefore + nblocked));
 #ifdef PARALLEL
         #pragma omp single nowait  // never worth parallelizing
 #endif

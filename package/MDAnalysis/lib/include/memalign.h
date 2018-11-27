@@ -53,41 +53,38 @@
     #endif
 // Intel-specific alignment macros
     #if (defined __INTEL_COMPILER) || (defined __ICL)
-        #define __attaligned \
-                __attribute__((aligned(MEMORY_ALIGNMENT)))
+        #define _attaligned __attribute__((aligned(MEMORY_ALIGNMENT)))
 // Unlike GCC's __builtin_assume_aligned, Intel's __assume_aligned macro doesn't
 // return its first argument, so we keep it disabled for now.
-        #define __assaligned(X) (X)
+        #define _assaligned(X) (X)
 // Intel pointer restriction:
         #define restrict __restrict
 // Disable malloc attribute for Intel:
-        #define __attmalloc
+        #define _attmalloc
 // GCC >= 4.7 and Clang-specific alignment macros:
     #elif (defined __GNUC__ && ((__GNUC__ > 4) || \
           ((__GNUC__ == 4) && (__GNUC_MINOR__ >= 7)))) || \
           (defined __clang__ && (__has_builtin(__builtin_assume_aligned)))
-        #define __attaligned \
-                __attribute__((__aligned__(MEMORY_ALIGNMENT)))
-        #define __assaligned(X) \
-                (__builtin_assume_aligned((X), MEMORY_ALIGNMENT))
+        #define _attaligned __attribute__((__aligned__(MEMORY_ALIGNMENT)))
+        #define _assaligned(X) (__builtin_assume_aligned((X), MEMORY_ALIGNMENT))
 // GCC/Clang pointer restriction:
         #define restrict __restrict__
-// GCC/Clang malloc attribute:
-        #define __attmalloc __attribute__((malloc))
+// GCC/Clang malloc function attribute:
+        #define _attmalloc __attribute__((malloc))
 // Disable alignment macros for all other compilers:
     #else
-        #define __attaligned
-        #define __assaligned(X) (X)   
+        #define _attaligned
+        #define _assaligned(X) (X)   
     #endif
 // If C11 is supported, use _Alignas() macro:
     #if __STDC_VERSION__ >= 201112L
-        #define __memaligned _Alignas(MEMORY_ALIGNMENT)
+        #define _memaligned _Alignas(MEMORY_ALIGNMENT)
 // Otherwise, disable the macro:
     #else
-        #define __memaligned
+        #define _memaligned
     #endif
 // pointer alignment check macro:
-    #define __chkaligned(X) \
+    #define _chkaligned(X) \
                 do { \
                     if (((size_t) (X)) % MEMORY_ALIGNMENT) { \
                         fprintf(stderr, \
@@ -99,14 +96,14 @@
 // If we cannot use memory alignment at all, disable all related macros:
 #else
     #define restrict
-    #define __attaligned
-    #define __assaligned(X) (X)
-    #define __memaligned
-    #define __attmalloc
+    #define _attaligned
+    #define _assaligned(X) (X)
+    #define _memaligned
+    #define _attmalloc
     #ifdef __cplusplus
-        #define __chkaligned(X) (static_cast<void>(0))
+        #define _chkaligned(X) (static_cast<void>(0))
     #else
-        #define __chkaligned(X) ((void) (0))
+        #define _chkaligned(X) ((void) (0))
     #endif
 #endif
 
@@ -142,7 +139,7 @@ extern "C" {
  * alignment is not guaranteed. If this is the case, the macro @c USE_ALIGNMENT
  * will be undefined, i.e., it can be used to check for guaranteed alignment.
  */
-__attmalloc static inline void* aligned_malloc(size_t size)
+_attmalloc static inline void* aligned_malloc(size_t size)
 {
 #ifdef USE_ALIGNMENT
     #ifdef USE_C11_ALIGNMENT
@@ -168,7 +165,7 @@ __attmalloc static inline void* aligned_malloc(size_t size)
  * alignment is not guaranteed. If this is the case, the macro @c USE_ALIGNMENT
  * will be undefined, i.e., it can be used to check for guaranteed alignment.
  */
-__attmalloc static inline void* aligned_calloc(size_t num, size_t size)
+_attmalloc static inline void* aligned_calloc(size_t num, size_t size)
 {
 #ifdef USE_ALIGNMENT
     size *= num;
