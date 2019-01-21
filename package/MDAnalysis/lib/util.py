@@ -208,7 +208,10 @@ from numpy.testing import assert_equal
 import inspect
 
 from ..exceptions import StreamWarning, DuplicateWarning
-from ._cutil import unique_int_1d
+from ._cutil import (unique_int_1d, isaligned, aligned_empty, aligned_zeros,
+                     aligned_copy, asaligned, MEMORY_ALIGNMENT)
+
+from ._cutil import MEMALIGN_ENABLED as USED_MEMALIGN
 
 
 # Python 3.0, 3.1 do not have the builtin callable()

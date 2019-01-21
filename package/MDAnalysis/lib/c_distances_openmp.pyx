@@ -52,7 +52,7 @@ cdef extern from "calc_distances.h":
     void _calc_dihedral(coordinate* atom1, coordinate* atom2, coordinate* atom3, coordinate* atom4, int numatom, double* angles)
     void _calc_dihedral_ortho(coordinate* atom1, coordinate* atom2, coordinate* atom3, coordinate* atom4, int numatom, float* box, double* angles)
     void _calc_dihedral_triclinic(coordinate* atom1, coordinate* atom2, coordinate* atom3, coordinate* atom4, int numatom, coordinate* box, double* angles)
-    void _ortho_pbc(coordinate* coords, int numcoords, float* box, float* box_inverse)
+    void _ortho_pbc(coordinate* coords, size_t numcoords, float* box, float* box_inverse)
     void _triclinic_pbc(coordinate* coords, int numcoords, coordinate* box, float* box_inverse)
 
 
@@ -248,7 +248,7 @@ def calc_dihedral_triclinic(numpy.ndarray coords1,
 
 def ortho_pbc(numpy.ndarray coords,
               numpy.ndarray box, numpy.ndarray box_inverse):
-    cdef int numcoords
+    cdef size_t numcoords
     numcoords = coords.shape[0]
 
     _ortho_pbc(<coordinate*> coords.data, numcoords,

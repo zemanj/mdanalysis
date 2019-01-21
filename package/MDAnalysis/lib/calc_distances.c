@@ -34,7 +34,8 @@ static inline int _floorf(float x) {
 #endif
 }
 
-void _ortho_pbc(coordinate* restrict coords, int numcoords, float* restrict box, float* restrict box_inverse)
+void _ortho_pbc(coordinate* restrict coords, size_t numcoords,
+                float* restrict box, float* restrict box_inverse)
 {
     /*
      * The coords array is not guaranteed to be memory-aligned, so we divide it
@@ -47,11 +48,11 @@ void _ortho_pbc(coordinate* restrict coords, int numcoords, float* restrict box,
      *      coords array
      */
     // compute end of first region (nbefore):
-    int nbefore = (int) first_aligned_index((void*) coords, (size_t) numcoords,
-                                            sizeof(coordinate));
-    int nblocks = 0;
-    int nblocked = 0;
-    int nremaining = 0;
+    int64_t nbefore = first_aligned_index((void*) coords, (size_t) numcoords,
+                                          sizeof(coordinate));
+    int64_t nblocks = 0L;
+    int64_t nblocked = 0L;
+    int64_t nremaining = 0L;
     // make sure the end of the first region is bound by the number of
     // coordinates:
     if (nbefore < numcoords) {
@@ -63,9 +64,9 @@ void _ortho_pbc(coordinate* restrict coords, int numcoords, float* restrict box,
         nremaining -= nblocked;
         // if there are no blocks in the second region, add the third to the
         // first region instead:
-        if (nblocks == 0) {
+        if (nblocks == 0L) {
             nbefore += nremaining;
-            nremaining = 0;
+            nremaining = 0L;
         }
     }
 #ifdef PARALLEL
@@ -78,7 +79,7 @@ void _ortho_pbc(coordinate* restrict coords, int numcoords, float* restrict box,
         float _memaligned _box[3*BLOCKSIZE] _attaligned;
         float _memaligned _box_inverse[3*BLOCKSIZE] _attaligned;
         float* restrict _coords = (float*) coords;
-        int i, n;
+        int64_t i, n;
         for(i=0; i<BLOCKSIZE; ++i) {
             memcpy(&_box[3*i], box, 3*sizeof(float));
             memcpy(&_box_inverse[3*i], box_inverse, 3*sizeof(float));

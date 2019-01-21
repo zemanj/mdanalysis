@@ -38,19 +38,17 @@ from cython.operator cimport dereference as deref
 
 
 __all__ = ['unique_int_1d', 'isaligned', 'aligned_empty', 'aligned_zeros',
-           'aligned_copy', 'asaligned', 'aligned_result_array_1d',
-           'aligned_result_array_2d', 'MEMORY_ALIGNMENT', 'make_whole',
-           'find_fragments']
+           'aligned_copy', 'asaligned', 'MEMALIGN_ENABLED', 'MEMORY_ALIGNMENT',
+           'make_whole', 'find_fragments']
 
 cdef extern from "numpy/arrayobject.h":
     void PyArray_ENABLEFLAGS(np.ndarray arr, int flags)
 cdef extern from "typedefs.h":
     ctypedef float coordinate[3]
 cdef extern from "memalign.h":
-    const size_t MEMALIGN "MEMORY_ALIGNMENT"
     const bint USED_MEMALIGN
+    const size_t MEMALIGN "MEMORY_ALIGNMENT"
     void* aligned_malloc(size_t size)
-#    void* aligned_calloc(size_t num, size_t size)
 cdef extern from "calc_distances.h":
     void minimum_image(double *x, float *box, float *inverse_box)
     void minimum_image_triclinic(double *dx, coordinate *box)
@@ -58,6 +56,7 @@ cdef extern from "calc_distances.h":
 ctypedef cset[int] intset
 ctypedef cmap[int, intset] intmap
 
+MEMALIGN_ENABLED = True if USED_MEMALIGN else False
 MEMORY_ALIGNMENT = MEMALIGN
 
 @cython.boundscheck(False) # turn off bounds-checking for entire function
@@ -146,7 +145,7 @@ cpdef np.ndarray aligned_empty(shape, dtype=float):
 
 @cython.boundscheck(False)
 @cython.wraparound(False)
-def aligned_zeros(shape, dtype=float):
+cpdef np.ndarray aligned_zeros(shape, dtype=float):
     # check if dtype is compatible with alignment:
     dtype = np.dtype(dtype)
     cdef size_t alignment = dtype.alignment
@@ -194,30 +193,6 @@ def asaligned(a, dtype=None, casting='unsafe', copy=True):
         a.flags['CARRAY']:
         return a
     return aligned_copy(a, dtype=dtype, casting=casting)
-
-
-def aligned_result_array_1d(size_t n):
-    cdef np.float64_t[::1] result_view
-    cdef np.ndarray[dtype=np.float64_t, ndim=1] result_array
-    if USED_MEMALIGN:
-        result_view = <np.float64_t[:n]>aligned_malloc(n * sizeof(np.float64_t))
-        result_array = np.asarray(result_view)
-        PyArray_ENABLEFLAGS(result_array, np.NPY_OWNDATA)
-        return result_array
-    else:
-        return aligned_empty(n, np.float64)
-
-
-def aligned_result_array_2d(size_t n, size_t m):
-    cdef np.float64_t[:, ::1] result_view
-    cdef np.ndarray[dtype=np.float64_t, ndim=2] result_array
-    if USED_MEMALIGN:
-        result_view = <np.float64_t[:n, :m:1]>aligned_malloc(n * m * sizeof(np.float64_t))
-        result_array = np.asarray(result_view)
-        PyArray_ENABLEFLAGS(result_array, np.NPY_OWNDATA)
-        return result_array
-    else:
-        return aligned_empty(n, np.float64)
 
 
 cdef intset difference(intset a, intset b):

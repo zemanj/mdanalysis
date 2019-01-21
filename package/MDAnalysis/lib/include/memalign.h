@@ -116,9 +116,17 @@
 #endif
 
 #include "static_assert.h"
-#include <stdio.h>  // we want to be able to throw errors
-#include <stdlib.h>
-#include <string.h>
+#ifdef __cplusplus
+    #include <cstdio>
+    #include <cstdlib>
+    #include <cstring>
+    #include <cstdint>
+#else
+    #include <stdio.h>  // we want to be able to throw errors
+    #include <stdlib.h>
+    #include <string.h>
+    #include <stdint.h>
+#endif
 
 static_assert(((MEMORY_ALIGNMENT > 0) && \
               !(MEMORY_ALIGNMENT & (MEMORY_ALIGNMENT - 1))), \
@@ -188,8 +196,8 @@ _attmalloc static inline void* aligned_calloc(size_t num, size_t size)
  * of @p item_size bytes.
  * This function is intended to be used for manual loop peeling.
  */
-static inline size_t first_aligned_index(void* array, size_t len,
-                                         size_t item_size)
+static inline int64_t first_aligned_index(void* array, size_t len,
+                                          size_t item_size)
 {
     size_t offset = (MEMORY_ALIGNMENT - (((size_t) array) % MEMORY_ALIGNMENT)) \
                     % MEMORY_ALIGNMENT;
@@ -200,7 +208,7 @@ static inline size_t first_aligned_index(void* array, size_t len,
     if (offset > max_offset) {
         offset = max_offset;
     }
-    return offset / item_size;
+    return (int64_t) (offset / item_size);
 }
 
 #ifdef __cplusplus

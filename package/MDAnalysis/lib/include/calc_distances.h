@@ -25,8 +25,13 @@
 #include "memalign.h"
 #include "typedefs.h"
 
-#include <math.h>
-#include <float.h>
+#ifdef __cplusplus
+    #include <cmath>
+    #include <cfloat>
+#else
+    #include <math.h>
+    #include <float.h>
+#endif
 
 #ifdef PARALLEL
   #include <omp.h>
@@ -102,7 +107,7 @@ static inline void minimum_image_triclinic(double *dx,
   }
 }
 
-void _ortho_pbc(coordinate* coords, int numcoords, float* box,
+void _ortho_pbc(coordinate* coords, size_t numcoords, float* box,
                 float* box_inverse);
 
 void _triclinic_pbc(coordinate* coords, int numcoords, coordinate* box,
