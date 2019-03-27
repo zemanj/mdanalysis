@@ -471,17 +471,16 @@ _BTYPE_TO_SHAPE = {'bond': 2, 'angle': 3, 'dihedral': 4, 'improper': 4}
 
 
 class TopologyGroup(object):
+    """A container for a group of bonds.
 
-    """A container for a groups of bonds.
-
-    All bonds of a certain types can be retrieved from within the
+    All bonds of a certain type can be retrieved from within the
     :class:`TopologyGroup` by querying with a tuple of types::
 
       tg2 = tg.select_bonds([key])
 
     Where *key* describes the desired bond as a tuple of the involved
-    :class:`~MDAnalysis.core.groups.Atom` types, as defined by the .type Atom
-    attribute). A list of available keys can be displayed using the
+    :class:`~MDAnalysis.core.groups.Atom` types, as defined by the ``.type``
+    Atom attribute. A list of available keys can be displayed using the
     :meth:`types` method.
 
     Alternatively, all the bonds which are in a given
@@ -502,7 +501,7 @@ class TopologyGroup(object):
     :class:`MDAnalysis.lib.distances`.
 
     TopologyGroups can be combined with TopologyGroups of the same bond
-    type (ie can combine two angle containing TopologyGroups).
+    type (e.g., one can combine two angle-containing TopologyGroups).
 
     .. versionadded:: 0.8
     .. versionchanged:: 0.9.0
@@ -655,7 +654,16 @@ class TopologyGroup(object):
 
     @property
     def indices(self):
-        """all bond indices
+        """A 2d :class:`numpy.ndarray` of dtype ``numpy.int32`` containing all
+        unique bond indices in this :class:`TopologyGroup`.
+
+        The array's shape is ``(n_bonds, atoms_per_bond)``, where ``n_bonds``
+        refers to the number of bonds, angles, or dihedrals/impropers, whereas
+        ``atoms_per_bond`` is 2, 3, or 4 for bonds, angles, or
+        dihedrals/impropers, respectively. Therefore, each row represents one
+        connection (bond, angle, or dihedral/improper) and contains the
+        indices (zero-based within ``Universe.atoms``) of the corresponding
+        interconected atoms.
 
         See Also
         --------
@@ -672,16 +680,23 @@ class TopologyGroup(object):
         """Return a data structure with atom indices describing the bonds.
 
         This format should be identical to the original contents of the
-        entries in universe._topology.
+        entries in ``Universe._topology``.
         Note that because bonds are sorted as they are initialised, the order
         that atoms are defined in each entry might be reversed.
 
         Returns
         -------
-        indices : tuple
-            A tuple of tuples which define the contents of this
-            TopologyGroup in terms of the atom numbers.  (0 based
-            index within u.atoms)
+        indices : numpy.ndarray
+            A 2d array of shape ``(n_bonds, atoms_per_bond)`` and dtype
+            ``numpy.int32`` defining the contents of this TopologyGroup in terms
+            of atom numbers (zero-based index within Universe.atoms).
+            Here, ``n_bonds`` refers to the number of bonds, angles, or
+            dihedrals/impropers, whereas ``atoms_per_bond`` is 2, 3, or 4 for
+            bonds, angles, or dihedrals/impropers, respectively.
+
+        See Also
+        --------
+        indices : equivalent :class:`TopologyGroup` property
 
         .. versionadded:: 0.9.0
         .. versionchanged:: 0.10.0
@@ -690,7 +705,7 @@ class TopologyGroup(object):
         """
         return self.indices
 
-    dump_contents = to_indices
+    dump_contents = to_indices  # TODO: deprecate / remove
 
     def __len__(self):
         """Number of bonds in the topology group"""
@@ -833,7 +848,6 @@ class TopologyGroup(object):
                              "".format(self.btype, nvert))
 
     # Distance calculation methods below
-    # "Slow" versions exist as a way of testing the Cython implementations
     def values(self, **kwargs):
         """Return the size of each object in this Group
 
@@ -855,22 +869,6 @@ class TopologyGroup(object):
             return self.dihedrals(**kwargs)
         elif self.btype == 'improper':
             return self.dihedrals(**kwargs)
-
-    def _bondsSlow(self, pbc=False):  # pragma: no cover
-        """Slow version of bond (numpy implementation)"""
-        if not self.btype == 'bond':
-            return TypeError("TopologyGroup is not of type 'bond'")
-        else:
-            bond_dist = self._ags[0].positions - self._ags[1].positions
-            if pbc:
-                box = self._ags[0].dimensions
-                # orthogonal and divide by zero check
-                if (box[6:9] == 90.).all() and not (box[0:3] == 0).any():
-                    bond_dist -= np.rint(bond_dist / box[0:3]) * box[0:3]
-                else:
-                    raise ValueError("Only orthogonal boxes supported")
-
-            return np.array([mdamath.norm(a) for a in bond_dist])
 
     def bonds(self, pbc=False, result=None):
         """Calculates the distance between all bonds in this TopologyGroup
@@ -898,17 +896,6 @@ class TopologyGroup(object):
             return distances.calc_bonds(self._ags[0].positions,
                                         self._ags[1].positions,
                                         result=result)
-
-    def _anglesSlow(self):  # pragma: no cover
-        """Slow version of angle (numpy implementation)"""
-        if not self.btype == 'angle':
-            raise TypeError("TopologyGroup is not of type 'angle'")
-
-        vec1 = self._ags[0].positions - self._ags[1].positions
-        vec2 = self._ags[2].positions - self._ags[1].positions
-
-        angles = np.array([mdamath.angle(a, b) for a, b in zip(vec1, vec2)])
-        return angles
 
     def angles(self, result=None, pbc=False):
         """Calculates the angle in radians formed between a bond
@@ -947,19 +934,6 @@ class TopologyGroup(object):
                                          self._ags[1].positions,
                                          self._ags[2].positions,
                                          result=result)
-
-    def _dihedralsSlow(self):  # pragma: no cover
-        """Slow version of dihedral (numpy implementation)"""
-        if self.btype not in ['dihedral', 'improper']:
-            raise TypeError("TopologyGroup is not of type 'dihedral' or "
-                            "'improper'")
-
-        ab = self._ags[0].positions - self._ags[1].positions
-        bc = self._ags[1].positions - self._ags[2].positions
-        cd = self._ags[2].positions - self._ags[3].positions
-
-        return np.array([mdamath.dihedral(a, b, c)
-                         for a, b, c in zip(ab, bc, cd)])
 
     def dihedrals(self, result=None, pbc=False):
         """Calculate the dihedralal angle in radians for this topology
