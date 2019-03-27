@@ -1355,7 +1355,7 @@ class TestDistanceBackendSelection(object):
     @staticmethod
     @pytest.fixture()
     def backend_selection_pos():
-        positions = np.random.rand(10, 3)
+        positions = np.random.rand(10, 3).astype(np.float32)
         N = positions.shape[0]
         result = np.empty(N * (N - 1) // 2, dtype=np.float64)
 
@@ -1373,7 +1373,7 @@ class TestDistanceBackendSelection(object):
         except RuntimeError:
             pytest.fail("Failed to understand backend {0}".format(backend))
 
-    def test_wront_backend(self, backend_selection_pos):
+    def test_wrong_backend(self, backend_selection_pos):
         positions, result = backend_selection_pos
         with pytest.raises(ValueError):
             distances._run("calc_self_distance_array", args=(positions, result),

@@ -573,6 +573,8 @@ class TestAtomGroupProperties(object):
     - setting properties from AG changes the Atom
     - setting the property on Atom changes AG
     - _unique_restore_mask works correctly
+    - _positions_view_or_copy works correctly
+    - _positions_c_view_or_copy works correctly
     """
     @staticmethod
     def get_new(att_type):
