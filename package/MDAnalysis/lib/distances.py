@@ -224,7 +224,7 @@ def distance_array(reference, configuration, box=None, result=None,
     refnum = reference.shape[0]
 
     distances = _check_result_array(result, (refnum, confnum))
-    if len(distances) == 0:
+    if confnum == 0 or refnum == 0:
         return distances
 
     if box is not None:
@@ -297,7 +297,7 @@ def self_distance_array(reference, box=None, result=None, backend="serial"):
     distnum = refnum * (refnum - 1) // 2
 
     distances = _check_result_array(result, (distnum,))
-    if len(distances) == 0:
+    if distnum == 0:
         return distances
 
     if box is not None:
