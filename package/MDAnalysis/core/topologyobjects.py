@@ -529,9 +529,16 @@ class TopologyGroup(object):
             # guess what I am
             # difference between dihedral and improper
             # not really important
-            self.btype = {2: 'bond',
-                          3: 'angle',
-                          4: 'dihedral'}[len(bondidx[0])]
+            n = bondidx.shape[1]
+            if n == 2:
+                self.btype = 'bond'
+            elif n == 3:
+                self.btype = 'angle'
+            elif n == 4:
+                self.btype = 'dihedral'
+            else:
+                raise ValueError("Invalid bondidx shape {}"
+                                 "".format(bondidx.shape))
         elif btype in _BTYPE_TO_SHAPE:
             self.btype = btype
         else:
