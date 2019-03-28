@@ -49,9 +49,8 @@ import warnings
 from numpy.lib.utils import deprecate
 
 from . import flags
-from ..lib.util import (cached, convert_aa_code, iterable, warn_if_not_unique,
-                        unique_int_1d)
-from ..lib import transformations, mdamath
+from ..lib.util import cached, warn_if_not_unique
+from ..lib import transformations, mdamath, util
 from ..exceptions import NoDataError, SelectionError
 from .topologyobjects import TopologyGroup
 from . import selection
@@ -94,7 +93,7 @@ def _check_length(func):
         # quasi len measurement
         # strings, floats, ints are len 0, ie not iterable
         # other iterables are just len'd
-        if iterable(values):
+        if util.iterable(values):
             return len(values)
         else:
             return 0  # special case
@@ -161,7 +160,7 @@ def _wronglevel_error(attr, group):
         attrname = attr.attrname
 
     err_msg = "Cannot set {attr} from {cls}. Use '{cls}.{correct}.{attr} = '"
-    # eg "Cannot set masses from Residue.  'Use Residue.atoms.masses = '"
+    # eg "Cannot set masses from Residue. Use 'Residue.atoms.masses = '"
 
     return NotImplementedError(err_msg.format(
         attr=attrname, cls=group.__class__.__name__, correct=correct,
@@ -1455,7 +1454,8 @@ class Resnames(ResidueAttr):
             raise TypeError("Unknown format='{0}': must be one of: {1}".format(
                     format, ", ".join(formats)))
         try:
-            sequence = "".join([convert_aa_code(r) for r in self.residues.resnames])
+            sequence = "".join([util.convert_aa_code(r) \
+                                for r in self.residues.resnames])
         except KeyError as err:
             raise ValueError("AtomGroup contains a residue name '{0}' that "
                              "does not have a IUPAC protein 1-letter "
@@ -1617,23 +1617,66 @@ class Segids(SegmentAttr):
 
 class _Connection(AtomAttr):
     """Base class for connectivity between atoms"""
+
     def __init__(self, values, types=None, guessed=False, order=None):
+        # check values
+        try:
+            valarr = np.asarray(values, dtype=np.int32)
+            if len(valarr) > 0:
+                assert valarr.ndim == 2
+                n_atoms_per_conn = valarr.shape[1]
+        except:
+            raise ValueError("values must be convertible to a 2d integer "
+                             "array.")
         self.values = list(values)
+        n_values = len(values)
+        if n_values > 0:
+            if not 2 <= n_atoms_per_conn <= 4:
+                raise ValueError("The number of indices per value must be "
+                                 "between 2 and 4 (got {})"
+                                 "".format(n_atoms_per_conn))
+            # add_bonds() requires the items of values to be hashable, so we
+            # check lazily and convert them to tuples if necessary:
+            if not isinstance(self.values[0], tuple):
+                self.values = [tuple(val) for val in self.values]
+        # check types
         if types is None:
-            types = [None] * len(values)
-        self.types = types
-        if guessed in (True, False):
-            # if single value passed, multiply this across
-            # all bonds
-            guessed = [guessed] * len(values)
-        self._guessed = guessed
+            types = [None] * n_values
+        else:
+            if not util.iterable(types):
+                raise TypeError("types must be None or an iterable (got {})."
+                                "".format(type(types)))
+            if len(types) != n_values:
+                raise ValueError("guessed must have the same length as values.")
+        self.types = list(types)
+        # check guessed
+        if not util.iterable(guessed):
+            if guessed in (True, False):
+                # if single value passed, multiply this across
+                # all bonds
+                guessed = [guessed] * n_values
+            else:
+                raise TypeError("guessed must be True, False or an iterable "
+                                "(got {}).".format(type(guessed)))
+        if len(guessed) != n_values:
+            raise ValueError("guessed must have the same length as values.")
+        self._guessed = list(guessed)
+
         if order is None:
-            order = [None] * len(values)
-        self.order = order
+            order = [None] * n_values
+        else:
+            if not util.iterable(order):
+                raise TypeError("order must be None or an iterable (got {})."
+                                "".format(type(order)))
+            if len(order) != n_values:
+                raise ValueError("order must have the same length as values.")
+        self.order = list(order)
         self._cache = dict()
 
     def copy(self):
         """Return a deepcopy of this attribute"""
+        # We don't need a copy.deepcopy of self.values because its tems are
+        # tuples (i.e., immutable)
         return self.__class__(copy.copy(self.values),
                               copy.copy(self.types),
                               copy.copy(self._guessed),
@@ -1660,8 +1703,51 @@ class _Connection(AtomAttr):
                 bd[a].append((b, t, g, o))
         return bd
 
+    @property
+    @cached('bondmap')
+    def _bondmap(self):
+        """A lazily built 1d object array mapping atom indices to bonds
+
+        Note
+        ----
+        This takes longer to build than ``_bondDict`` but it is a lot
+        faster to get bond indices from this structure than from ``_bondDict``.
+
+
+        .. versionadded:: 0.20.0
+        """
+        if not self.values:
+            return np.empty((0,), dtype=object)
+        bix = np.array(self.values, dtype=np.int32)
+        atoms_per_bond = bix.shape[1]
+        if atoms_per_bond == 2:
+            bix.sort(axis=1)
+        else:
+            flip_mask = np.where(bix[:, 0] > bix[:, -1])
+            bix[flip_mask] = bix[flip_mask][:, ::-1]
+        try:
+            # The axis keyword only works in numpy 1.13 or later
+            bix = np.unique(bix, axis=0)
+        except TypeError:
+            # TODO: Remove once the minimum required numpy version is bumped to
+            # >=1.13
+            bix = util.unique_rows(bix)
+        n = bix.max() + 1
+        bd = defaultdict(list)
+        for b in bix:
+            for a in b:
+               bd[a].append(b)
+        bondmap = np.empty(n, dtype=object)
+        for i in range(n):
+            bonds = bd[i]
+            if bonds:
+                bondmap[i] = np.asarray(bonds, dtype=np.int32)
+            else:
+                bondmap[i] = np.empty((0, atoms_per_bond), dtype=np.int32)
+        return bondmap
+
     def set_atoms(self, ag):
-        return NotImplementedError("Cannot set bond information")
+        raise NotImplementedError("Cannot set bond information")
 
     def get_atoms(self, ag):
         try:
@@ -1697,11 +1783,11 @@ class _Connection(AtomAttr):
                 self.types.append(t)
                 self._guessed.append(g)
                 self.order.append(o)
-        # kill the old cache of bond Dict
-        try:
-            del self._cache['bd']
-        except KeyError:
-            pass
+        # kill the old cache of _bondDict and _bondmap:
+        # TODO: Find a way to kill Universe._cache['fraginfo'] from here because
+        #       that's also invalidated
+        self._cache.pop('bd', None)
+        self._cache.pop('bondmap', None)
 
 
 class Bonds(_Connection):
@@ -1711,8 +1797,9 @@ class Bonds(_Connection):
     These indices refer to the atom indices.
     E.g., ` [(0, 1), (1, 2), (2, 3)]`
 
-    Also adds the `bonded_atoms`, `fragment` and `fragments`
-    attributes.
+    Also adds the `bonded_atoms`, `bondindices`, `fragment`, `fragments`,
+    `fragindex`, `fragindices`, and `n_fragments` properties to :class:`Atom`
+    and :class:`AtomGroup` where applicable.
     """
     attrname = 'bonds'
     # Singular is the same because one Atom might have
@@ -1730,6 +1817,52 @@ class Bonds(_Connection):
     transplants[Atom].append(
         ('bonded_atoms', property(bonded_atoms, None, None,
                                   bonded_atoms.__doc__)))
+
+    def bondindices(self):
+        """Sorted indices of bonds connecting to Atoms of an AtomGroup.
+
+        A sorted numpy array of shape ``(n, 2)`` and dtype ``np.int32``
+        containing the index pairs of all (``n``) bonds connecting to
+        :class:`Atoms<Atom>` (or :class:`Atoms<Atom>` of an :class:`AtomGroup`).
+
+        Notes
+        -----
+        This property yields the same results as returned by
+        :meth:`Atom.bonds.to_indices` (or :meth:`AtomGroup.bonds.to_indices`)
+        but is faster when used more than once on the same topology.
+
+
+        .. versionadded:: 0.20.0
+        """
+        bondmap = self.universe._topology.bonds._bondmap
+        ix = self._ix
+        # Was this called by an Atom?
+        if isinstance(ix, numbers.Integral):
+            if ix < len(bondmap):
+                return bondmap[ix].copy()
+            return np.empty((0, 2), dtype=np.int32)
+        # Called by an AtomGroup:
+        ix = ix[np.where(ix < len(bondmap))]
+        if len(ix) == 0:
+            return np.empty((0, 2), dtype=np.int32)
+        bix = np.vstack(bondmap[ix])
+        if len(bix) > 1:
+            try:
+                # The axis keyword only works in numpy 1.13 or later
+                bix = np.unique(bix, axis=0)
+            except TypeError:
+                # TODO: Remove once the minimum required numpy version is bumped
+                # to >=1.13
+                bix = util.unique_rows(bix)
+        return bix
+
+    transplants[Atom].append(
+        ('bondindices', property(bondindices, None, None,
+                                 bondindices.__doc__)))
+
+    transplants[AtomGroup].append(
+        ('bondindices', property(bondindices, None, None,
+                                 bondindices.__doc__)))
 
     def fragindex(self):
         """The index (ID) of the
@@ -1814,7 +1947,7 @@ class Bonds(_Connection):
 
         .. versionadded:: 0.9.0
         """
-        unique_fragindices = unique_int_1d(self.fragindices)
+        unique_fragindices = util.unique_int_1d(self.fragindices)
         return tuple(self.universe._fraginfo.fragments[unique_fragindices])
 
     def n_fragments(self):
@@ -1831,7 +1964,7 @@ class Bonds(_Connection):
 
         .. versionadded:: 0.20.0
         """
-        return len(unique_int_1d(self.fragindices))
+        return len(util.unique_int_1d(self.fragindices))
 
     transplants[Atom].append(
         ('fragment', property(fragment, None, None,

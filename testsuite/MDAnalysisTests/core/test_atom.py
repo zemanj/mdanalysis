@@ -27,11 +27,12 @@ import MDAnalysis as mda
 import numpy as np
 import pytest
 from MDAnalysis import NoDataError
+from MDAnalysisTests.core.util import UnWrapUniverse
 from MDAnalysisTests.datafiles import (
     PSF, DCD,
     XYZ_mini,
 )
-from numpy.testing import assert_almost_equal
+from numpy.testing import assert_almost_equal, assert_equal
 
 
 class TestAtom(object):
@@ -111,6 +112,25 @@ class TestAtom(object):
         at = universe.atoms[0]
         ref = [b.partner(at) for b in at.bonds]
         assert ref == list(at.bonded_atoms)
+
+    def test_bondindices(self, universe):
+        at = universe.atoms[0]
+        ix = at.ix
+        ref = at.bonds.indices
+        res = at.bondindices
+        assert len(res) == 4
+        assert_equal(res, ref)
+
+    def test_bondindices_nonbonded_atom(self):
+        u = UnWrapUniverse()
+        at = u.atoms[0]
+        # make sure first atom really doesn't have bonds:
+        assert len(at.bonds) == 0
+        ix = at.ix
+        ref = at.bonds.indices
+        res = at.bondindices
+        assert_equal(res, np.empty((0, 2), dtype=np.int32))
+        assert_equal(res, ref)
 
     def test_undefined_occupancy(self, universe):
         with pytest.raises(AttributeError):

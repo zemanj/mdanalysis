@@ -32,7 +32,7 @@ from numpy.testing import (
     assert_almost_equal,
 )
 import pytest
-from MDAnalysisTests.datafiles import PSF, DCD
+from MDAnalysisTests.datafiles import PSF, DCD, TPR, XTC
 from MDAnalysisTests import make_Universe, no_deprecated_call
 
 import MDAnalysis as mda
@@ -40,7 +40,9 @@ import MDAnalysis.core.topologyattrs as tpattrs
 from MDAnalysis.core import groups
 from MDAnalysis.core.topology import Topology
 from MDAnalysis.exceptions import NoDataError
+from MDAnalysis.lib.util import iterable, unique_rows
 
+from collections import defaultdict
 
 class DummyGroup(object):
     """Designed to mock an Group
@@ -560,3 +562,256 @@ def test_static_typing_from_empty():
 
     assert isinstance(u._topology.masses.values, np.ndarray)
     assert isinstance(u.atoms[0].mass, float)
+
+
+class TestConnection(object):
+
+    @pytest.mark.parametrize('values', (
+        [],
+        (),
+        np.empty((0, 2), dtype=np.int32),
+        np.zeros((1, 2), dtype=bool),
+        np.arange(10).reshape((-1, 2)),
+        np.arange(9).reshape((-1, 3)),
+        np.arange(8).reshape((-1, 4)),
+        [(1, 2), (2, 1)],
+        [('1', '2'), ('4', '3')]
+    ))
+    def test_default_init(self, values):
+        n_values = len(values)
+        conn = tpattrs._Connection(values)
+        assert len(conn.values) == n_values
+        assert conn.types == ([None] * n_values)
+        assert conn._guessed == ([False] * n_values)
+        assert conn.order == ([None] * n_values)
+        if len(values) > 0:
+            valarr = np.asarray(conn.values, dtype=np.int32)
+            assert valarr.ndim == 2
+            assert 2 <= valarr.shape[1] <= 4
+        # make sure items in _Connection.values are tuples:
+        for val in conn.values:
+            assert isinstance(val, tuple)
+        # Filling the cache during init would abuse the concept of caching:
+        assert type(conn._cache) == dict
+        assert not conn._cache
+
+    @pytest.mark.parametrize('values, types, guessed, order', (
+        ([], [], [], []),
+        ((), (), (), ()),
+        (np.empty((0, 2), dtype=np.int32), np.empty((0,), dtype=object),
+         np.empty((0,), dtype=bool), np.empty((0,), dtype=object)),
+        (np.zeros((1, 2), dtype=bool), ['A'], (True,), ['1']),
+        (np.arange(6).reshape((-1, 2)), [('A', 'B'), ('B', 'A'), ('A', 'A')],
+         [False, True, True], None),
+        (np.arange(6).reshape((-1, 3)), None, np.ones(2, dtype=bool), [1, 2]),
+        (np.arange(8).reshape((-1, 4)), None, True, None)
+    ))
+    def test_non_default_init(self, values, types, guessed, order):
+        n_values = len(values)
+        conn = tpattrs._Connection(values, types=types, guessed=guessed,
+                                   order=order)
+        assert len(conn.values) == n_values
+        if iterable(types):
+            assert conn.types == list(types)
+        else:
+            assert conn.types == ([None] * n_values)
+        if iterable(guessed):
+            assert conn._guessed == list(guessed)
+        else:
+            assert conn._guessed == ([guessed] * n_values)
+        if iterable(order):
+            assert conn.order == list(order)
+        else:
+            assert conn.order == ([None] * n_values)
+        if len(values) > 0:
+            valarr = np.asarray(conn.values, dtype=np.int32)
+            assert valarr.ndim == 2
+            assert 2 <= valarr.shape[1] <= 4
+        # make sure items in _Connection.values are tuples:
+        for val in conn.values:
+            assert isinstance(val, tuple)
+        # Filling the cache during init would abuse the concept of caching:
+        assert type(conn._cache) == dict
+        assert not conn._cache
+
+    @pytest.mark.parametrize('values', (
+        "abc",
+        "(1,2), (3, 4)",
+        [('a', 'b'), (1, 2)],
+        np.zeros(2, dtype=np.int32),
+        np.zeros((1, 1), dtype=np.int32),
+        np.zeros((1, 5), dtype=np.int32),
+    ))
+    def test_default_init_wrong_values(self, values):
+        with pytest.raises(ValueError):
+            conn = tpattrs._Connection(values)
+
+    @pytest.mark.parametrize('values, types, guessed, order', (
+        ([(0, 1), (2, 1)], 0, False, None),
+        ([(0, 1), (2, 1)], None, 'x', None),
+        ([(0, 1), (2, 1)], None, True, False),
+    ))
+    def test_non_default_init_wrong_types(self, values, types, guessed, order):
+        with pytest.raises(TypeError):
+            conn = tpattrs._Connection(values, types=types, guessed=guessed,
+                                       order=order)
+
+    @pytest.mark.parametrize('values, types, guessed, order', (
+        ([(0, 1), (2, 1)], [0], False, None),
+        ([(0, 1), (2, 1)], None, [True, False, True], None),
+        ([(0, 1), (2, 1)], None, True, [None, None, None, None]),
+    ))
+    def test_non_default_init_wrong_len(self, values, types, guessed, order):
+        with pytest.raises(ValueError):
+            conn = tpattrs._Connection(values, types=types, guessed=guessed,
+                                       order=order)
+
+    @pytest.mark.parametrize('conn', (
+        tpattrs._Connection([[0, 1], [2, 1]]),
+        tpattrs._Connection([[0, 1], [2, 1]], types=[('A', 'B'), ('B', 'A')],
+                            guessed=[True, False], order=['1', '2'])
+    ))
+    def test_copy(self, conn):
+        conn._cache['dummy'] = False
+        conn2 = conn.copy()
+        # make sure cache is not copied:
+        assert not conn2._cache
+        # make sure class members are unchanged:
+        assert_equal(conn2.values, conn.values)
+        assert_equal(conn2.types, conn.types)
+        assert_equal(conn2._guessed, conn._guessed)
+        assert_equal(conn2.order, conn.order)
+        # make sure all members are copies:
+        assert conn2.values is not conn.values
+        assert conn2.types is not conn.types
+        assert conn2._guessed is not conn._guessed
+        assert conn2.order is not conn.order
+
+    def test_len_and_bondDict(self):
+        conn = tpattrs._Connection([[0, 1], [2, 1]],
+                                   types=[('A', 'B'), ('B', 'A')],
+                                   guessed=[True, False],
+                                   order=['1', '2'])
+        assert not conn._cache
+        bd = conn._bondDict
+        assert 'bd' in conn._cache
+        assert bd is conn._cache['bd']
+        assert type(bd) == defaultdict
+        assert len(bd) == 3
+        assert len(conn) == len(bd)
+        assert bd[0] == [((0, 1), ('A', 'B'), True, '1')]
+        assert bd[1] == [((0, 1), ('A', 'B'), True, '1'),
+                         ((1, 2), ('B', 'A'), False, '2')]
+        assert bd[2] == [((1, 2), ('B', 'A'), False, '2')]
+
+    def test_len_and_bondDict_empty(self):
+        conn = tpattrs._Connection([])
+        assert not conn._cache
+        bd = conn._bondDict
+        assert 'bd' in conn._cache
+        assert bd is conn._cache['bd']
+        assert type(bd) == defaultdict
+        assert len(bd) == 0
+        assert len(conn) == len(bd)
+
+    @pytest.mark.parametrize('conn', (
+        tpattrs._Connection([(0, 1, 3), (3, 1, 4), (0, 1, 3)]),
+        tpattrs._Connection([(0, 1, 3), (4, 1, 3), (3, 1, 0)],
+                            types=[('A', 'B', 'E'), ('F', 'A', 'E'),
+                                   ('E', 'B', 'A')],
+                            guessed=[False, True, False],
+                            order=['1', 'am', '1'])
+    ))
+    def test_bondmap(self, conn):
+        assert not conn._cache
+        bm = conn._bondmap
+        assert 'bondmap' in conn._cache
+        assert bm is conn._cache['bondmap']
+        assert type(bm) == np.ndarray
+        assert len(bm) == 5
+        assert bm.dtype == object
+        assert_equal(bm[0], np.array([[0, 1, 3]], dtype=np.int32))
+        assert_equal(bm[1], np.array([[0, 1, 3], [3, 1, 4]], dtype=np.int32))
+        assert_equal(bm[2], np.empty((0, 3), dtype=np.int32))
+        assert_equal(bm[3], np.array([[0, 1, 3], [3, 1, 4]], dtype=np.int32))
+        assert_equal(bm[4], np.array([[3, 1, 4]], dtype=np.int32))
+
+    def test_bondmap_empty(self):
+        conn = tpattrs._Connection([])
+        assert not conn._cache
+        bm = conn._bondmap
+        assert 'bondmap' in conn._cache
+        assert bm is conn._cache['bondmap']
+        assert type(bm) == np.ndarray
+        assert len(bm) == 0
+        assert bm.dtype == object
+
+    @pytest.mark.parametrize('conn', (
+        tpattrs._Connection([]),
+        tpattrs._Connection([(0, 1), (4, 1)]),
+        tpattrs._Connection([(0, 1, 3), (3, 1, 4)]),
+        tpattrs._Connection([(0, 1, 3, 5), (5, 1, 4, 3), (3, 4, 1, 5)])
+    ))
+    def test_get_atoms(self, conn):
+        # mock AtomGroup:
+        ag = DummyGroup(np.arange(10))
+        ag.universe = mda.Universe.empty(10)
+        # mock Bonds / Angles / Dihedrals TopologyAttr:
+        if not conn.values:
+            # could be anything
+            conn.singular = 'bonds'
+        elif len(conn.values[0]) == 2:
+            conn.singular = 'bonds'
+        elif len(conn.values[0]) == 3:
+            conn.singular = 'angles'
+        else:
+            conn.singular = 'dihedrals'
+        if conn.values:
+            bix = unique_rows(np.vstack(conn._bondmap))
+        else:
+            bix = np.empty((0, 2), dtype=np.int32)
+        tg = conn.get_atoms(ag)
+        assert type(tg) == mda.core.topologyobjects.TopologyGroup
+        assert len(tg) == len(bix)
+        assert tg.btype == conn.singular[:-1]
+        assert_equal(bix, tg.indices)
+
+    def test_set_atoms(self):
+        with pytest.raises(NotImplementedError):
+            tpattrs._Connection([]).set_atoms(0)
+
+    @pytest.mark.parametrize('conn', (
+        # use guessed=True for all conns to facilitate _bondDict checking below
+        tpattrs._Connection([], guessed=True),
+        tpattrs._Connection([(0, 1), (4, 1)], guessed=True),
+        tpattrs._Connection([(0, 1, 3), (3, 1, 4)], guessed=True),
+        tpattrs._Connection([(0, 1, 3, 5), (5, 1, 4, 3), (3, 4, 1, 5)],
+                            guessed=True)
+    ))
+    def test_add_bonds(self, conn):
+        # populate conn._cache:
+        conn._bondDict
+        conn._bondmap
+        assert 'bd' in conn._cache
+        assert 'bondmap' in conn._cache
+        # choose appropriate bonds to add:
+        if not conn.values:
+            values = [(1, 2)]
+        elif len(conn.values[0]) == 2:
+            values = [(1, 2), (0, 1)]  # with already existing value
+        elif len(conn.values[0]) == 3:
+            values = [(1, 2, 3), (3, 1, 4)]  # with already existing value
+        else:
+            values = [(1, 2, 3, 4), (3, 4, 1, 5)]  # with already existing value
+        # now add the bonds:
+        conn.add_bonds(values)
+        # make sure cache has been cleared:
+        assert not conn._cache
+        # check that values have been added:
+        bd = conn._bondDict
+        for val in values:
+            assert val in conn.values
+            for ix in val:
+                assert ((val, None, True, None) in bd[ix])
+        # check that already existing values have not been added as duplicates:
+        assert sorted(conn.values) == sorted(list(set(conn.values)))

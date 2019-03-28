@@ -1626,6 +1626,30 @@ class TestAtomGroup(object):
         assert_equal(universe.atoms.indices,
                      sorted(universe.atoms.indices))
 
+    def test_bondindices(self, universe):
+        ag = universe.atoms[::50]
+        ref = ag.bonds.indices
+        res = ag.bondindices
+        assert len(res) == 152
+        assert_equal(res, ref)
+
+    def test_bondindices_empty_ag(self, universe):
+        ag = universe.atoms[[]]
+        ref = ag.bonds.indices
+        res = ag.bondindices
+        assert_equal(res, np.empty((0, 2), dtype=np.int32))
+        assert_equal(res, ref)
+
+    def test_bondindices_nonbonded_ag(self):
+        u = UnWrapUniverse()
+        ag = u.atoms[:3]
+        # make sure first 3 atoms really don't have bonds:
+        assert len(ag.bonds) == 0
+        ref = ag.bonds.indices
+        res = ag.bondindices
+        assert_equal(res, np.empty((0, 2), dtype=np.int32))
+        assert_equal(res, ref)
+        
 
 class TestAtomGroupTimestep(object):
     """Tests the AtomGroup.ts attribute (partial timestep)"""
