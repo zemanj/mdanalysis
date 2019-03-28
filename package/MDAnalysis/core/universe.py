@@ -1020,7 +1020,6 @@ class Universe(object):
         return fraginfo(fragindices, fragments)
 
 
-# TODO: what is the point of this function???
 def as_Universe(*args, **kwargs):
     """Return a universe from the input arguments.
 
@@ -1035,9 +1034,17 @@ def as_Universe(*args, **kwargs):
          as_Universe(PSF, DCD, **kwargs) --> Universe(PSF, DCD, **kwargs)
          as_Universe(*args, **kwargs) --> Universe(*args, **kwargs)
 
+
     Returns
     -------
     :class:`~MDAnalysis.core.groups.Universe`
+
+    Notes
+    -----
+    This function serves as a convenience tool allowing classes which require a
+    Universe to accept an existing Universe or a topology / trajectory file name
+    as input without having to distinguish between these cases. See, for
+    example, :class:`~MDAnalysis.analysis.leaflet.LeafletFinder`.
     """
     if len(args) == 0:
         raise TypeError("as_Universe() takes at least one argument (%d given)" % len(args))
