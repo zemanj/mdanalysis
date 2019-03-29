@@ -29,6 +29,9 @@ import pytest
 
 import MDAnalysis as mda
 from MDAnalysis import NoDataError
+from MDAnalysis.lib.util import coords_center
+from MDAnalysis.lib.distances import apply_PBC, transform_RtoS
+
 from MDAnalysisTests.core.util import UnWrapUniverse
 
 
@@ -219,7 +222,7 @@ class TestUnwrap(object):
     @pytest.mark.parametrize('level', ('atoms', 'residues', 'segments'))
     @pytest.mark.parametrize('compound', ('fragments', 'molecules', 'residues',
                                           'group', 'segments'))
-    def test_unwrap_zero_mass_exception_safety(self, level, compound):
+    def test_unwrap_zero_mass(self, level, compound):
         # get a pristine test universe:
         u = UnWrapUniverse()
         # set masses of molecule 12 to zero:
@@ -236,14 +239,14 @@ class TestUnwrap(object):
             group = group.residues
         elif level == 'segments':
             group = group.segments
-        # store original positions:
-        orig_pos = group.atoms.positions
         # try to unwrap:
         with pytest.raises(ValueError):
             group.unwrap(compound=compound, reference='com',
                          inplace=True)
-        # make sure atom positions are unchanged:
-        assert_array_equal(group.atoms.positions, orig_pos)
+        # We used to test for exception safety here, however, due to performance
+        # reasons, exception safety is no longer guaranteed for inplace
+        # operations. This is documented so that the user can choose out-of
+        # place operations if exception safety is an issue.
 
     @pytest.mark.parametrize('level', ('atoms', 'residues', 'segments'))
     @pytest.mark.parametrize('compound', ('fragments', 'molecules', 'residues',
@@ -320,7 +323,7 @@ class TestUnwrap(object):
     @pytest.mark.parametrize('compound', ('fragments', 'molecules', 'residues',
                                           'group', 'segments'))
     @pytest.mark.parametrize('reference', ('com', 'cog', None))
-    def test_unwrap_no_bonds_exception_safety(self, level, compound, reference):
+    def test_unwrap_no_bonds(self, level, compound, reference):
         # universe without bonds:
         u = UnWrapUniverse(have_bonds=False)
         # select group appropriate for compound:
@@ -335,12 +338,14 @@ class TestUnwrap(object):
             group = group.residues
         elif level == 'segments':
             group = group.segments
-        # store original positions:
-        orig_pos = group.atoms.positions
-        with pytest.raises(NoDataError):
-            group.unwrap(compound=compound, reference=reference, inplace=True)
-        # make sure atom positions are unchanged:
-        assert_array_equal(group.atoms.positions, orig_pos)
+        if compound != 'residues':  # residues can be wrapped without bonds here
+            with pytest.raises(NoDataError):
+                group.unwrap(compound=compound, reference=reference,
+                             inplace=True)
+        # We used to test for exception safety here, however, due to performance
+        # reasons, exception safety is no longer guaranteed for inplace
+        # operations. This is documented so that the user can choose out-of
+        # place operations if exception safety is an issue.
 
     @pytest.mark.parametrize('level', ('atoms', 'residues', 'segments'))
     @pytest.mark.parametrize('reference', ('com', 'cog', None))

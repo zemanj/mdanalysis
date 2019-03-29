@@ -390,6 +390,18 @@ class UnWrapUniverse(object):
                                              [0.26, 0.75, 0.7],
                                              [0.36, 0.75, 0.7]],
                                             dtype=np.float32)
+            elif compound != 'group':
+                #molecule 11
+                relpos[31:39, :] = np.array([[-0.34, 0.75, 0.7],
+                                             [-0.24, 0.75, 0.7],
+                                             [-0.14, 0.75, 0.7],
+                                             [-0.04, 0.75, 0.7],
+                                             [0.06, 0.75, 0.7],
+                                             [0.16, 0.75, 0.7],
+                                             [0.26, 0.75, 0.7],
+                                             [0.36, 0.75, 0.7]],
+                                            dtype=np.float32)
+                                             
         else:
             # molecule 2 & 3
             relpos[1:3, :] = np.array([[0.4, 0.5, 0.5],

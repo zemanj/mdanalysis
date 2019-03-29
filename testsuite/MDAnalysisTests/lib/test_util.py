@@ -528,6 +528,11 @@ class TestMakeWhole(object):
         # NoData caused by no bonds
         universe = mda.Universe(Make_Whole)
         ag = universe.residues[0].atoms
+        # with original box size, wrapping is possible without bonds:
+        mdamath.make_whole(ag)
+        # with half the box size, the molecule spans more than half the box
+        # width and wrapping without bonds should fail:
+        universe.dimensions = [50, 50, 50, 90, 90, 90]
         with pytest.raises(NoDataError):
             mdamath.make_whole(ag)
 
@@ -542,6 +547,10 @@ class TestMakeWhole(object):
             mdamath.make_whole(ag, reference_atom=universe.atoms[-1])
 
     def test_impossible_solve(self, universe):
+        # with original box size, wrapping is possible without bonds:
+        mdamath.make_whole(universe.atoms)
+        # Make box smaller to force using bonds:
+        universe.dimensions = [50, 50, 50, 90, 90, 90]
         # check that the algorithm sees the bad walk
         with pytest.raises(ValueError):
             mdamath.make_whole(universe.atoms)
@@ -610,6 +619,8 @@ class TestMakeWhole(object):
         # previous bug where if two fragments are given
         # but all bonds were short, the algorithm didn't
         # complain
+        # First make box smaller to force using bonds:
+        ag.dimensions = [50, 50, 50, 90, 90, 90]
         mdamath.make_whole(ag)
         with pytest.raises(ValueError):
             mdamath.make_whole(universe.atoms)

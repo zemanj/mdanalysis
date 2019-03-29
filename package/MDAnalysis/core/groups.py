@@ -1417,10 +1417,11 @@ class GroupBase(_MutableBase):
 
         comp = util.check_compound(compound, atoms=True)
 
-        if len(atoms) == 0:
+        n_atoms = len(atoms)
+        if n_atoms == 0:
             return np.empty((0, 3), dtype=np.float32)
 
-        if comp == "atoms" or len(atoms) == 1:
+        if comp == "atoms" or n_atoms == 1:
             if inplace:
                 # try to get a C-contiguous view:
                 positions = atoms._positions_c_view_or_copy
@@ -1497,66 +1498,90 @@ class GroupBase(_MutableBase):
             positions = positions[restore_mask]
         return positions
 
-    def unwrap(self, compound='fragments', reference='com', inplace=True):
-        """Move atoms of this group so that bonds within the
-        group's compounds aren't split across periodic boundaries.
+    def unwrap(self, compound='fragments', reference='com',
+               return_reference=False, inplace=True):
+        """Move atoms of this group so that bonds within the group's compounds
+        aren't split across periodic boundaries.
 
         This function is most useful when atoms have been packed into the
         primary unit cell, causing breaks mid-molecule, with the molecule then
         appearing on either side of the unit cell. This is problematic for
         operations such as calculating the center of mass of the molecule. ::
 
-           +-----------+       +-----------+
-           |           |       |           |
-           | 6       3 |       |         3 | 6
-           | !       ! |       |         ! | !
-           |-5-8   1-2-|  ==>  |       1-2-|-5-8
-           | !       ! |       |         ! | !
-           | 7       4 |       |         4 | 7
-           |           |       |           |
-           +-----------+       +-----------+
+           +-----------+             +-----------+
+           |           |             |           |
+           | 6       3 |           3 | 6         |
+           | !       ! |           ! | !         |
+           |-5-8   1-2-|   ==>   1-2-|-5-8       |
+           | !       ! |           ! | !         |
+           | 7       4 |           4 | 7         |
+           |           |             |           |
+           +-----------+             +-----------+
 
         Parameters
         ----------
-        compound : {'group', 'segments', 'residues', 'molecules', \
-                    'fragments'}, optional
-            Which type of component to unwrap. Note that, in any case, all
-            atoms within each compound must be interconnected by bonds, i.e.,
-            compounds must correspond to (parts of) molecules.
+        compound : {'group', 'segments', 'residues', 'molecules', 'fragments'},\
+                   optional
+            Which type of component to unwrap. Note that if compounds are larger
+            than half the box in any dimension, all atoms within such compounds
+            must be interconnected by bonds, i.e., these compounds must
+            correspond to (parts of) molecules.
         reference : {'com', 'cog', None}, optional
             If ``'com'`` (center of mass) or ``'cog'`` (center of geometry), the
             unwrapped compounds will be shifted so that their individual
-            reference point lies within the primary unit cell.
-            If ``None``, no such shift is performed.
+            reference point lies within the primary unit cell. If ``None``, no
+            such shift is performed.
+        return_reference : bool, optional
+            If ``True``, the coordinates of the point(s) of reference are
+            returned as well.
         inplace : bool, optional
             If ``True``, coordinates are modified in place.
 
         Returns
         -------
         coords : numpy.ndarray
-            Unwrapped atom coordinate array of shape ``(n, 3)``.
+            Unwrapped atom coordinate array of shape ``(n, 3)`` and dtype
+            ``numpy.float32``.
+        refcoords : numpy.ndarray, optional
+            Reference coordinates of the unwrapped compounds (dtype
+            ``numpy.float64``). If `reference` is ``'com'``, these will be the
+            center(s) of mass of (compounds of) the group.
+            Only returned if `return_reference` is ``True`` and `reference` is
+            not ``None``.
 
         Raises
         ------
-        NoDataError
+        ~MDAnalysis.exceptions.NoDataError
             If `compound` is ``'molecules'`` but the underlying topology does
-            not contain molecule information, or if `reference` is ``'com'``
-            but the topology does not contain masses.
+            not contain molecule information.
+        ~MDAnalysis.exceptions.NoDataError
+            If `reference` is ``'com'`` but the topology does not contain
+            masses.
+        ~MDAnalysis.exceptions.NoDataError
+            If compound is ``'fragments'`` or if (any compound of) the group
+            spans more than half a box length and the topology doesn't have
+            bonds.
         ValueError
-            If `reference` is not one of ``'com'``, ``'cog'``, or ``None``, or
-            if `reference` is ``'com'`` and the total mass of any `compound` is
+            If `reference` is not one of ``'com'``, ``'cog'``, or ``None``.
+        ValueError
+            If `reference` is ``'com'`` and the total mass of any `compound` is
             zero.
 
-        Note
-        ----
-        Be aware of the fact that only atoms *belonging to the group* will
-        be unwrapped! If you want entire molecules to be unwrapped, make sure
-        that all atoms of these molecules are part of the group.\n
-        An AtomGroup containing all atoms of all fragments in the group ``ag``
-        can be created with::
+        Notes
+        -----
+        * Be aware of the fact that only atoms *belonging to the group* will
+          be unwrapped! If you want entire molecules to be unwrapped, make sure
+          that all atoms of these molecules are part of the group.\n
+          An AtomGroup containing all atoms of all fragments in the group ``ag``
+          can be created with::
 
-          all_frag_atoms = sum(ag.fragments)
+              all_frag_atoms = sum(ag.fragments)
 
+        * When `inplace` is ``True``, this method is not exception safe.
+          This does *not* mean that atom positions could be invalidated in terms
+          of periodic boundary conditions. It only means that if an exception is
+          raised, the exact atom positions before calling this method might not
+          be retained and some positions might be shifted by one box length.
 
         See Also
         --------
@@ -1568,79 +1593,118 @@ class GroupBase(_MutableBase):
 
         .. versionadded:: 0.20.0
         """
-        atoms = self.atoms
-        comp = util.check_compound(compound)
-
-        # bail out early if no bonds in topology:
-        if not hasattr(atoms, 'bonds'):
-            raise NoDataError("{}.unwrap() not available; this requires Bonds"
-                              "".format(self.__class__.__name__))
-
-        unique_atoms = atoms.unique
-        if reference is not None:
-            ref = reference.lower()
-            if ref  == 'com':
-                # Don't use hasattr(self, 'masses') because that's incredibly
-                # slow for ResidueGroups or SegmentGroups
-                if not hasattr(unique_atoms, 'masses'):
-                    raise NoDataError("Cannot perform unwrap with "
-                                      "reference='com', this requires masses.")
-            elif ref != 'cog':
-                raise ValueError("Unrecognized reference '{}'. Please use one "
-                                 "of 'com', 'cog', or None.".format(reference))
-
-        # The 'group' needs no splitting:
-        if comp == 'group':
-            positions = mdamath.make_whole(unique_atoms, inplace=False)
-            # Apply reference shift if required:
-            if reference is not None and len(positions) > 0:
-                if ref == 'com':
-                    masses = unique_atoms.masses
-                    total_mass = masses.sum()
-                    if np.isclose(total_mass, 0.0):
-                        raise ValueError("Cannot perform unwrap with "
-                                         "reference='com' because the total "
-                                         "mass of the group is zero.")
-                    refpos = np.sum(positions * masses[:, None], axis=0)
-                    refpos /= total_mass
-                else:  # ref == 'cog'
-                    refpos = positions.mean(axis=0)
-                refpos = refpos.astype(np.float32, copy=False)
-                target = distances.apply_PBC(refpos, self.dimensions)
-                positions += target - refpos
-        # We need to split the group into compounds:
+        box = self.dimensions
+        if not np.all(box > 0.0):
+            raise ValueError("Invalid dimensions: At least one box dimension or"
+                             "angle is non-positive. You can set valid "
+                             "dimensions using '{}.dimensions ='."
+                             "".format(self.__class__.__name__))
+        if box[3] == 90.0 and box[4] == 90.0 and box[5] == 90.0:
+            ortho = True
         else:
-            compound_indices = unique_atoms.compound_indices(comp)
-            # Now process every compound:
-            unique_compound_indices = util.unique_int_1d(compound_indices)
-            positions = unique_atoms.positions
-            for i in unique_compound_indices:
-                mask = np.where(compound_indices == i)
-                c = unique_atoms[mask]
-                positions[mask] = mdamath.make_whole(c, inplace=False)
-                # Apply reference shift if required:
-                if reference is not None:
-                    if ref == 'com':
-                        masses = c.masses
-                        total_mass = masses.sum()
-                        if np.isclose(total_mass, 0.0):
-                            raise ValueError("Cannot perform unwrap with "
-                                             "reference='com' because the "
-                                             "total mass of at least one of "
-                                             "the {} is zero.".format(comp))
-                        refpos = np.sum(positions[mask] * masses[:, None],
-                                        axis=0)
-                        refpos /= total_mass
-                    else:  # ref == 'cog'
-                        refpos = positions[mask].mean(axis=0)
-                    refpos = refpos.astype(np.float32, copy=False)
-                    target = distances.apply_PBC(refpos, self.dimensions)
-                    positions[mask] += target - refpos
+            ortho = False
+            box = mdamath.triclinic_vectors(box).ravel()
+
+        # no matter what kind of group we have, we need to work on its (unique)
+        # atoms:
+        atoms = self.atoms
+        if not self.isunique:
+            _atoms = atoms.unique
+            restore_mask = atoms._unique_restore_mask
+            atoms = _atoms
+        n_atoms = len(atoms)
+
+        # check if we have bonds available:
+        have_bonds = True
+        try:
+            atoms.universe._topology.bonds
+        except (AttributeError, NoDataError):
+            have_bonds = False
+
+        comp = util.check_compound(compound)
+        return_reference &= reference is not None
+
+        # bail out if group is empty:
+        if n_atoms == 0:
+            pos = np.empty((0, 3), dtype=np.float32)
+            if return_reference:
+                return pos, pos.copy()
+            return pos
+
+        weights = None
+        refpos = None
+
         if inplace:
-            unique_atoms.positions = positions
-        if not atoms.isunique:
-            positions = positions[atoms._unique_restore_mask]
-        return positions
+            # try to get a C-contiguous view:
+            pos = atoms._positions_c_view_or_copy
+            iscopy = pos.flags['OWNDATA']
+        else:
+            # get a copy:
+            pos = atoms.positions
+            iscopy = True
+
+        if n_atoms == 1:
+            if reference is not None:
+                # unwrapping a single atom actually means wrapping it:
+                if ortho:
+                    c_distances.ortho_pbc(pos, box)
+                else:
+                    c_distances.triclinic_pbc(pos, box)
+                # The com or cog of a single atom
+                refpos = pos.copy()
+        else:
+            # We have at least two atoms
+            if reference is not None:
+                ref = reference.lower()
+                if ref == 'com':
+                    try:
+                        weights = atoms.masses
+                    except AttributeError:
+                        raise NoDataError("Cannot perform unwrap with "
+                                          "reference='com', this requires "
+                                          "masses.")
+                elif ref != 'cog':
+                    raise ValueError("Unrecognized reference definition '{}'. "
+                                     "Please use one of 'com' or 'cog'."
+                                     "".format(reference))
+            if comp == 'group':
+                # we don't need masks for compound='group'
+                n_comp = 1
+                comp_masks = None
+            else:
+                # get compound masks:
+                comp_ix = atoms.compound_indices(comp)
+                comp_masks = util.unique_masks_int_1d(comp_ix,
+                                                      assume_unsorted=True)
+                n_comp = len(comp_masks)
+            if reference is not None:
+                # create buffer for reference coordinates:
+                refpos = np.zeros((n_comp, 3), dtype=np.float64) # must be zeros
+            # go!
+            zero_weights = util._unwrap(atoms, pos, have_bonds, ortho, box,
+                                        comp_masks, refpos, weights)
+            # check if any of the compound's masses sum up to zero:
+            if zero_weights:
+                if comp == 'group':
+                    msg = ("Unwrap with compound='group' and reference='com' "
+                           "failed because the total mass of the group is "
+                           "zero.")
+                else:
+                    msg = ("Unwrap with compound='{0}' and reference='com' "
+                          "failed because the total mass of one or more {0} "
+                          "is zero.".format(comp))
+                raise ValueError(msg)
+        # check if we need to copy positions:
+        if inplace:
+            if iscopy:
+                atoms.positions = pos  # apply the result
+            else:
+                pos = pos.copy()  # don't return a view!
+        if not self.isunique:
+            pos = pos[restore_mask]
+        if return_reference:
+            return pos, refpos
+        return pos
 
     def copy(self):
         """Get another group identical to this one.
@@ -2400,7 +2464,7 @@ class AtomGroup(GroupBase):
         """
         if self.isunique:
             return self
-        unique_ix, restore_mask = np.unique(self.ix, return_inverse=True)
+        unique_ix, restore_mask = np.unique(self._ix, return_inverse=True)
         _unique = self.universe.atoms[unique_ix]
         self._unique_restore_mask = restore_mask
         # Since we know that _unique is a unique AtomGroup, we set its

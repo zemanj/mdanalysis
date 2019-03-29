@@ -31,8 +31,6 @@
 
 from __future__ import division
 
-import cython
-cimport cython
 import numpy as np
 cimport numpy as np
 from libc.math cimport sqrt, fabs, INFINITY, NAN
@@ -41,7 +39,6 @@ from MDAnalysis import NoDataError
 
 from libcpp.set cimport set as cset
 from libcpp.map cimport map as cmap
-from libcpp.list cimport list as clist
 from libcpp.vector cimport vector
 from cython.operator cimport dereference as deref
 
@@ -52,8 +49,10 @@ __all__ = ['coords_add_vector', 'unique_int_1d', 'unique_masks_int_1d',
 
 cdef extern from "calc_distances.h":
     ctypedef float coordinate[3]
-    void minimum_image(double* x, float* box, float* inverse_box)
-    void minimum_image_triclinic(double* dx, float* box)
+    void minimum_image(double* x, float* box, float* inverse_box) nogil
+    void minimum_image_triclinic(double* dx, float* box) nogil
+    void _ortho_pbc(coordinate* coords, int numcoords, float* box) nogil
+    void _triclinic_pbc(coordinate* coords, int numcoords, float* box) nogil
 
 ctypedef cset[int] intset
 ctypedef cmap[int, intset] intmap
@@ -583,7 +582,7 @@ def unique_int_1d(np.intp_t[:] values not None, bint return_counts=False,
 cdef inline np.intp_t _unique_int_1d(np.intp_t[:]& values, bint assume_unsorted,
                                      np.intp_t[::1] unique):
     """Low-level implementation of :func:`unique_int_1d` with
-    ``return_counts=False``.
+    ``return_counts=False`` and ``return_masks=False``.
 
 
     .. versionadded:: 0.20.0
@@ -808,9 +807,21 @@ def unique_masks_int_1d(np.intp_t[:] values not None,
 
     Returns
     -------
-    numpy.ndarray
-        An array of dtype ``object`` containing index masks for each unique
+    masks : numpy.ndarray
+        An array of dtype ``object`` containing index masks, one for each unique
         element in `values`.
+
+    Notes
+    -----
+    The masks in the returned object array can themselves be either slice
+    objects or potentially unsorted (we don't use stable sorting) index
+    memoryviews. Memoryviews can be used for indexing just like normal numpy
+    index arrays. If one wishes to print the mask indices, this can be done by
+    converting the masks to numpy arrays:
+
+    >>> for mask in masks:
+    >>>     print(numpy.asarray(mask))
+
 
     See Also
     --------
@@ -1006,19 +1017,19 @@ cdef inline np.intp_t _argwhere_int_1d(np.intp_t[:] arr, np.intp_t value,
     return nargs
 
 
-cdef intset difference(intset a, intset b):
+cdef inline intset difference(intset a, intset b) nogil:
     """a.difference(b)
 
-    Returns set of values in a which are not in b
+    Returns a set of values in `a` which are not in `b`.
     """
     cdef intset output
     for val in a:
-        if b.count(val) != 1:
+        if b.count(val) == 0:
             output.insert(val)
     return output
 
 
-def make_whole(atomgroup, reference_atom=None, inplace=True):
+def make_whole(atomgroup, reference_atom=None, bint inplace=True):
     """Move all atoms in a single molecule so that bonds don't split over
     images.
 
@@ -1027,16 +1038,15 @@ def make_whole(atomgroup, reference_atom=None, inplace=True):
     on either side of the unit cell. This is problematic for operations
     such as calculating the center of mass of the molecule. ::
 
-       +-----------+     +-----------+
-       |           |     |           |
-       | 6       3 |     |         3 | 6
-       | !       ! |     |         ! | !
-       |-5-8   1-2-| ->  |       1-2-|-5-8
-       | !       ! |     |         ! | !
-       | 7       4 |     |         4 | 7
-       |           |     |           |
-       +-----------+     +-----------+
-
+       +-----------+             +-----------+
+       |           |             |           |
+       | 6       3 |           3 | 6         |
+       | !       ! |           ! | !         |
+       |-5-8   1-2-|   ==>   1-2-|-5-8       |
+       | !       ! |           ! | !         |
+       | 7       4 |           4 | 7         |
+       |           |             |           |
+       +-----------+             +-----------+
 
     Parameters
     ----------
@@ -1058,13 +1068,16 @@ def make_whole(atomgroup, reference_atom=None, inplace=True):
     Raises
     ------
     NoDataError
-        There are no bonds present.
-        (See :func:`~MDAnalysis.topology.core.guess_bonds`)
+        If the supplied AtomGroup is too large to be unwrapped without bond
+        information (i.e., the group spans across more than half of the box in
+        at least one dimension) but the underlying topology has no bonds.
+        (Note that bonds can be guessed, see
+        :func:`MDAnalysis.topology.core.guess_bonds`)
 
     ValueError
-        The algorithm fails to work.  This is usually
-        caused by the atomgroup not being a single fragment.
-        (ie the molecule can't be traversed by following bonds)
+        If the algorithm fails to work. This is usually caused by the atomgroup
+        not being a single fragment (i.e., the molecule can't be traversed by
+        following bonds).
 
 
     Example
@@ -1090,6 +1103,11 @@ def make_whole(atomgroup, reference_atom=None, inplace=True):
         make_whole(atomgroup, reference_atom=atomgroup[10])
 
 
+    Note
+    ----
+    This function is exception-safe, i.e., in case of failure, even when
+    `inplace` is ``True``, the atomgroup's positions will remain unchanged.
+
     See Also
     --------
     :meth:`MDAnalysis.core.groups.AtomGroup.unwrap`
@@ -1100,96 +1118,166 @@ def make_whole(atomgroup, reference_atom=None, inplace=True):
         Inplace-modification of atom positions is now optional, and positions
         are returned as a numpy array.
     """
-    cdef intset refpoints, todo, done
-    cdef np.intp_t i, j, nloops, ref, atom, other, natoms
+    cdef np.intp_t i, j, nloops, atom, other, natoms
+    cdef np.intp_t ref
     cdef cmap[int, int] ix_to_rel
-    cdef intmap bonding
-    cdef int[:, :] bonds
-    cdef float[:, :] oldpos, newpos
-    cdef bint ortho
-    cdef float[:] box
-    cdef float[:, :] tri_box
+    cdef np.int32_t[:, ::1] bond_ix
+    cdef float[:, ::1] pos
+    cdef bint ortho = True
+    cdef float[::1] box
     cdef float half_box[3]
     cdef float inverse_box[3]
-    cdef double vec[3]
-    cdef ssize_t[:] ix_view
-    cdef bint is_unwrapped
+    cdef float* hbox = &half_box[0]
+    cdef float* ibox = &inverse_box[0]
+    cdef np.intp_t[:] atom_ix
+    cdef bint success
 
-    # map of global indices to local indices
-    ix_view = atomgroup.ix[:]
-    natoms = atomgroup.ix.shape[0]
-
-    oldpos = atomgroup.positions
+    atom_ix = atomgroup._ix
+    natoms = atom_ix.shape[0]
 
     # Nothing to do for less than 2 atoms
     if natoms < 2:
-        return np.array(oldpos)
+        return atomgroup.positions
 
-    for i in range(natoms):
-        ix_to_rel[ix_view[i]] = i
+    box = atomgroup.dimensions
+
+    for i in range(3):
+        half_box[i] = 0.5 * box[i]
+        if box[i] <= 0.0:
+            raise ValueError("Invalid dimensions: At least one box dimension "
+                             "is non-positive. You can set valid dimensions "
+                             "using 'atomgroup.dimensions ='.")
+    for i in range(3, 6):
+        if box[i] != 90.0:
+            ortho = False
+            if box[i] >= 180.0:
+                raise ValueError("Invalid dimensions: At least one box angle is "
+                                 "greater than or equal to 180 degrees. You can "
+                                 "set valid dimensions using "
+                                 "'atomgroup.dimensions='.")
+
+    positions = atomgroup.positions
+    pos = positions
+
+    if ortho:
+        # If atomgroup is already unwrapped, bail out:
+        if isunwrapped_ortho(pos, &half_box[0]):
+            return np.asarray(pos)
+        inverse_box[0] = 1.0 / box[0]
+        inverse_box[1] = 1.0 / box[1]
+        inverse_box[2] = 1.0 / box[2]
+    else:
+        from .mdamath import triclinic_vectors
+        box = triclinic_vectors(box).ravel()
+        # Silence compiler warnings:
+        inverse_box[0] = 0.0
+        inverse_box[1] = 0.0
+        inverse_box[2] = 0.0
 
     if reference_atom is None:
         ref = 0
     else:
-        # Sanity check
-        if not reference_atom in atomgroup:
-            raise ValueError("Reference atom not in atomgroup")
-        ref = ix_to_rel[reference_atom.ix]
-
-    box = atomgroup.dimensions
-    for i in range(3):
-        half_box[i] = 0.5 * box[i]
-        if box[i] == 0.0:
-            raise ValueError("One or more dimensions was zero.  "
-                             "You can set dimensions using 'atomgroup.dimensions='")
-
-    ortho = True
-    for i in range(3, 6):
-        if box[i] != 90.0:
-            ortho = False
-
-    if ortho:
-        # If atomgroup is already unwrapped, bail out
-        is_unwrapped = True
-        for i in range(1, natoms):
-            for j in range(3):
-                if fabs(oldpos[i, j] - oldpos[0, j]) >= half_box[j]:
-                    is_unwrapped = False
+        # Sanity check:
+        atom = reference_atom._ix
+        with nogil:
+            success = False
+            for i in range(natoms):
+                if atom == atom_ix[i]:
+                    ref = i
+                    success = True
                     break
-            if not is_unwrapped:
-                break
-        if is_unwrapped:
-            return np.array(oldpos)
-        for i in range(3):
-            inverse_box[i] = 1.0 / box[i]
-    else:
-        from .mdamath import triclinic_vectors
-        tri_box = triclinic_vectors(box)
+        if not success:
+            raise ValueError("Reference atom not in atomgroup")
+
+    success = False
+    if ortho:
+        # Try to unwrap without bond information:
+        success = _make_whole_ortho_nobonds(pos, &box[0], hbox, ibox, ref)
+        # If unwrapping without bonds failed, get new positions:
+        if not success:
+            pos = atomgroup.positions
+    # Unwrap with bond information:
+    if not success:
+        # map of global indices to local indices
+        with nogil:
+            for i in range(natoms):
+                ix_to_rel[atom_ix[i]] = i
+        try:
+            bond_ix = atomgroup.bondindices
+        except (AttributeError, NoDataError):
+            raise NoDataError("Cannot make molecule whole without bond "
+                              "information in the topology.")
+        success = _make_whole_bonds(pos, ix_to_rel, bond_ix, &box[0], ibox,
+                                    ortho, ref)
+        if not success:
+            raise ValueError("Cannot make molecule whole: AtomGroup is not "
+                             "contiguous from bonds (i.e., probably not a "
+                             "molecule).")
+    if inplace:
+        atomgroup.positions = pos
+    return np.asarray(pos)
+
+
+cdef bint _make_whole_bonds(float[:, ::1]& pos, cmap[int, int]& ix_to_rel,
+                            np.int32_t[:, ::1]& bond_ix, float* box,
+                            float* ibox, bint ortho, np.intp_t ref) nogil:
+    """Low-Level implementation of :meth:`make_whole` using bonds. In contrast
+    to its counterpart :func:`_make_whole_nobonds`, this function is capable of
+    unwrapping molecules which are larger than half the box in any dimension.
+    However, this advantage comes with a significant performance penalty.
+
+    Parameters
+    ----------
+    pos : memoryview
+        A C-contiguous 2d memoryview of type ``numpy.float32`` and shape
+        ``(n, 3)`` holding the positions to work with. Will be modified in
+        place.
+    ix_to_rel : libcpp.map[int, int]
+        A data structure mapping atom indices to relative (i.e., zero-based)
+        indices.
+    bond_ix : memoryview
+        A C-contiguous 2d memoryview of type ``numpy.int32`` and shape
+        ``(m, 2)`` holding the bond indices to work with.
+    box : float*
+        Pointer to an array holding either orthorhombic box information or a
+        flattened triclinic box matrix.
+    ortho : bint
+        Boolean value indicating an orthorhombic (``True``) or triclinic
+        (``False``) unit cell.
+    ref : np.intp_t
+        The *relative* index in `pos` of the reference atom around which all
+        other atoms will be moved.
+
+    Returns
+    -------
+    success : bool
+        A boolean value indicating success (``True``) or failure (``False``).
+
+
+    .. versionadded:: 0.20.0
+    """
+    cdef intset refpoints, todo, done
+    cdef np.intp_t i, nloops, atom, other, natoms
+    cdef intmap bondmap
+    cdef double vec[3]
+
+    natoms = <np.intp_t> ix_to_rel.size()
 
     # C++ dict of bonds
-    try:
-        bonds = atomgroup.bonds.to_indices()
-    except (AttributeError, NoDataError):
-        raise NoDataError("The atomgroup is required to have bonds")
-    for i in range(bonds.shape[0]):
-        atom = bonds[i, 0]
-        other = bonds[i, 1]
+    for i in range(bond_ix.shape[0]):
+        atom = bond_ix[i, 0]
+        other = bond_ix[i, 1]
         # only add bonds if both atoms are in atoms set
         if ix_to_rel.count(atom) and ix_to_rel.count(other):
             atom = ix_to_rel[atom]
             other = ix_to_rel[other]
-
-            bonding[atom].insert(other)
-            bonding[other].insert(atom)
-
-    newpos = np.zeros((oldpos.shape[0], 3), dtype=np.float32)
+            bondmap[atom].insert(other)
+            bondmap[other].insert(atom)
 
     refpoints = intset()  # Who is safe to use as reference point?
     done = intset()  # Who have I already searched around?
     # initially we have one starting atom whose position is in correct image
     refpoints.insert(ref)
-    for i in range(3):
-        newpos[ref, i] = oldpos[ref, i]
 
     nloops = 0
     while <np.intp_t> refpoints.size() < natoms and nloops < natoms:
@@ -1200,31 +1288,580 @@ def make_whole(atomgroup, reference_atom=None, inplace=True):
         # points, but haven't been searched yet.
         todo = difference(refpoints, done)
         for atom in todo:
-            for other in bonding[atom]:
+            for other in bondmap[atom]:
                 # If other is already a refpoint, leave alone
                 if refpoints.count(other):
                     continue
                 # Draw vector from atom to other
                 for i in range(3):
-                    vec[i] = oldpos[other, i] - newpos[atom, i]
+                    vec[i] = pos[other, i] - pos[atom, i]
                 # Apply periodic boundary conditions to this vector
                 if ortho:
-                    minimum_image(&vec[0], &box[0], &inverse_box[0])
+                    minimum_image(&vec[0], box, ibox)
                 else:
-                    minimum_image_triclinic(&vec[0], &tri_box[0, 0])
+                    minimum_image_triclinic(&vec[0], box)
                 # Then define position of other based on this vector
                 for i in range(3):
-                    newpos[other, i] = newpos[atom, i] + vec[i]
-
+                    pos[other, i] = pos[atom, i] + vec[i]
                 # This other atom can now be used as a reference point
                 refpoints.insert(other)
             done.insert(atom)
 
     if <np.intp_t> refpoints.size() < natoms:
-        raise ValueError("AtomGroup was not contiguous from bonds, process failed")
-    if inplace:
-        atomgroup.positions = newpos
-    return np.array(newpos)
+        return False
+    return True
+
+
+cdef bint _make_whole_ortho_nobonds(float[:, ::1]& pos, float* box, float* hbox,
+                                    float* ibox, np.intp_t ref) nogil:
+    """Low-Level implementation of :func:`make_whole` which unwraps molecules
+    in an orthorhombic box without bond information.
+
+    This routine will only be successful if the unwrapped molecule is smaller
+    than half the box size in all dimensions. Nevertheless, it is much faster
+    than its counterpart :func:`_make_whole_bonds`, which has to traverse across
+    the molecule's bond network.
+
+    Parameters
+    ----------
+    pos : memoryview
+        A C-contiguous 2d memoryview of type ``numpy.float32`` and shape
+        ``(n, 3)`` holding the positions to work with. Will be modified in
+        place.
+    box : float*
+        Pointer to an array holding orthorhombic box information.
+    hbox : float*
+        Pointer to an array holding half orthorhombic box edge lengths in all
+        three dimensions.
+    ibox : float*
+        Pointer to an array holding inverse orthorhombic box edge lengths in all
+        three dimensions.
+    ref : np.intp_t
+        The *relative* index in `pos` so that all other atoms of the compound
+        will be moved around ``pos[ref]``.
+
+    Returns
+    -------
+    success : bool
+        A boolean value indicating success (``True``) or failure (``False``).
+        Failure indicates that the unwrapped molecule spans more than half the
+        box in at least one dimension.
+
+
+    .. versionadded:: 0.20.0
+    """
+    cdef bint shift_required = False
+    cdef np.intp_t natoms = pos.shape[0]
+    cdef np.intp_t i, j
+    cdef float ref_pos[3]
+    cdef float min_pos[3]
+    cdef float max_pos[3]
+    cdef double vec[3]
+    cdef float dist
+
+    ref_pos[0] = pos[ref, 0]
+    ref_pos[1] = pos[ref, 1]
+    ref_pos[2] = pos[ref, 2]
+
+    min_pos[0] = ref_pos[0]
+    min_pos[1] = ref_pos[1]
+    min_pos[2] = ref_pos[2]
+
+    max_pos[0] = ref_pos[0]
+    max_pos[1] = ref_pos[1]
+    max_pos[2] = ref_pos[2]
+
+    # Unwrap:
+    for i in range(natoms):
+        if i == ref:
+            continue
+        for j in range(3):
+            dist = pos[i, j] - ref_pos[j]
+            # check if a shift is required:
+            if dist > hbox[j]:
+                shift_required = True
+                break
+            elif dist <= -hbox[j]:
+                shift_required = True
+                break
+        if shift_required:
+            for j in range(3):
+                vec[j] = pos[i, j] - ref_pos[j]
+            minimum_image(&vec[0], box, ibox)
+            for j in range(3):
+                pos[i, j] = ref_pos[j] + vec[j]
+                # check for inexact multi-box shift:
+                dist = pos[i, j] - ref_pos[j]
+                if (dist > hbox[j]):
+                    pos[i, j] -= box[j]
+                elif (dist <= -hbox[j]):
+                    pos[i, j] += box[j]
+            shift_required = False
+        # Update the molecule's minimum and maximum bounding position:
+        for j in range(3):
+            if pos[i, j] < min_pos[j]:
+                min_pos[j] = pos[i, j]
+            elif pos[i, j] > max_pos[j]:
+                max_pos[j] = pos[i, j]
+
+    # Check if unwrap failed (i.e., if molecule spans more than half the box):
+    for i in range(3):
+        if (max_pos[i] - min_pos[i]) > hbox[i]:
+            return False
+    return True
+
+
+cdef bint _make_whole_ortho_nobonds_masked(float[:, ::1]& pos,
+                                           np.intp_t[::1]& mask, float* box,
+                                           float* hbox, float* ibox,
+                                           np.intp_t ref) nogil:
+    """Low-Level implementation of :func:`make_whole` which unwraps molecules
+    in an orthorhombic box without bond information.
+
+    In contrast to :func:`_make_whole_ortho_nobonds`, this function requires a
+    `mask` containing relative indices so that only the positions in `pos`
+    corresponding to the mask indices will be unwrapped.
+
+    This routine will only be successful if the unwrapped molecule is smaller
+    than half the box size in all dimensions. Nevertheless, it is much faster
+    than its counterpart :func:`_make_whole_bonds`, which has to traverse across
+    the molecule's bond network.
+
+    Parameters
+    ----------
+    pos : memoryview
+        A C-contiguous 2d memoryview of type ``numpy.float32`` and shape
+        ``(n, 3)`` holding the positions to work with. Will be modified in
+        place.
+    mask : memoryview
+        A contiguous 1d memoryview of type ``numpy.intp_t`` containing indices
+        of a compound's positions in the `pos` array.
+    box : float*
+        Pointer to an array holding orthorhombic box information.
+    hbox : float*
+        Pointer to an array holding half orthorhombic box edge lengths in all
+        three dimensions.
+    ibox : float*
+        Pointer to an array holding inverse orthorhombic box edge lengths in all
+        three dimensions.
+    ref : np.intp_t
+        The *relative* index in `mask` so that all other atoms of the compound
+        will be moved around ``pos[mask[ref]]``.
+
+    Returns
+    -------
+    success : bool
+        A boolean value indicating success (``True``) or failure (``False``).
+        Failure indicates that the unwrapped molecule spans more than half the
+        box in at least one dimension.
+
+
+    .. versionadded:: 0.20.0
+    """
+    cdef bint shift_required = False
+    cdef np.intp_t natoms = mask.shape[0]
+    cdef np.intp_t i, j, k
+    cdef float ref_pos[3]
+    cdef float min_pos[3]
+    cdef float max_pos[3]
+    cdef double vec[3]
+    cdef float dist
+
+    i = mask[ref]
+    ref_pos[0] = pos[i, 0]
+    ref_pos[1] = pos[i, 1]
+    ref_pos[2] = pos[i, 2]
+
+    min_pos[0] = ref_pos[0]
+    min_pos[1] = ref_pos[1]
+    min_pos[2] = ref_pos[2]
+
+    max_pos[0] = ref_pos[0]
+    max_pos[1] = ref_pos[1]
+    max_pos[2] = ref_pos[2]
+
+    # Unwrap:
+    for i in range(natoms):
+        if i == ref:
+            continue
+        k = mask[i]
+        for j in range(3):
+            dist = pos[k, j] - ref_pos[j]
+            # check if a shift is required:
+            if dist > hbox[j]:
+                shift_required = True
+                break
+            elif dist <= -hbox[j]:
+                shift_required = True
+                break
+        if shift_required:
+            for j in range(3):
+                vec[j] = pos[k, j] - ref_pos[j]
+            minimum_image(&vec[0], box, ibox)
+            for j in range(3):
+                pos[k, j] = ref_pos[j] + vec[j]
+                # check for inexact multi-box shift:
+                dist = pos[k, j] - ref_pos[j]
+                if (dist > hbox[j]):
+                    pos[k, j] -= box[j]
+                elif (dist <= -hbox[j]):
+                    pos[k, j] += box[j]
+            shift_required = False
+        # Update the molecule's minimum and maximum bounding position:
+        for j in range(3):
+            if pos[k, j] < min_pos[j]:
+                min_pos[j] = pos[k, j]
+            elif pos[k, j] > max_pos[j]:
+                max_pos[j] = pos[k, j]
+
+    # Check if unwrap failed (i.e., if molecule spans more than half the box):
+    for i in range(3):
+        if (max_pos[i] - min_pos[i]) > hbox[i]:
+            return False
+    return True
+
+
+def _unwrap(ag not None, np.ndarray[np.float32_t, ndim=2] positions not None,
+            bint have_bonds, bint ortho, float[::1] box not None,
+            object[::1] comp_masks, double[:, ::1] refpos, double[::1] weights):
+    """Move (compounds of) `atomgroup` so that its bonds aren't split across
+    periodic boundaries.
+
+    Low-level implementation of `MDanalysis.core.groups.AtomGroup.unwrap()`.
+
+    Parameters
+    ----------
+    ag : MDanalysis.core.groups.AtomGroup
+        The AtomGroup whose compounds to unwrap. *Must not be empty*!
+    positions : numpy.ndarray
+        A C-contiguous numpy array of shape ``(len(ag), 3)`` and dtype
+        ``numpy.float32`` containing the AtomGroup's positions. Will be modified
+        in place.
+    have_bonds : bool
+        Boolean value indicating whether the underlying topology contains bonds.
+    ortho : bool
+        If ``True``, the `box` is assumed to be orthorhombic, otherwise
+        triclinic.
+    box : numpy.ndarray
+        A 1d numpy array of dtype ``numpy.float32`` carrying orthorhombic or
+        flattened triclinic box information.
+    comp_masks : numpy.ndarray, optional
+        An array of shape ``(n_compounds,)`` and dtype ``object`` containing
+        index masks for the individual compounds of the AtomGroup. If
+        `comp_masks` is ``None`` or has length 1, the whole group is regarded as
+        a single compound. Note that if compounds are larger than half the box
+        in any dimension, all atoms within such compounds must be interconnected
+        by bonds, i.e., compounds must correspond to (parts of) molecules.
+    refpos : nupy.ndarray, optional
+        An array of shape ``(len(comp_masks), 3)`` (or ``(1, 3)`` if
+        `comp_masks` is ``None``) and dtype ``numpy.float64`` serving as a
+        buffer to store and return the reference coordinates, i.e., the
+        (weighted) centers of each compound. Will be modified in place.
+        If provided, unwrapped compounds will be shifted so that their
+        individual reference point lies within the primary unit cell. If
+        ``None``, no such shift is performed.
+    weights : nupy.ndarray, optional
+        A contiguous 1d numpy array of shape ``(len(ag),)`` and dtype
+        ``numpy.float64`` containing weights to compute weighted reference
+        positions. If ``None`` and `refpos` is not ``None``, this indicates that
+        centers of geometry will be used as reference positions. If `refpos` is
+        ``None``, this parameter will be ignored.
+
+    Returns
+    -------
+    zero_weights : bool
+        A boolean indicating whether the weights (of any compound) sum up to
+        zero. If `weights` is ``None``, this will always be ``False``.
+
+
+    .. versionadded:: 0.20.0
+    """
+    cdef np.ndarray[np.float32_t, ndim=2] shiftsarr
+    cdef float[:, ::1] shifts
+    cdef float[:, ::1] targets
+    cdef float[:, ::1] pos = positions
+    cdef float half_box[3]
+    cdef float inverse_box[3]
+    cdef float* hbox = &half_box[0]
+    cdef float* ibox = &inverse_box[0]
+    cdef np.intp_t i, j
+    cdef np.intp_t natoms = pos.shape[0]
+    cdef np.intp_t natoms_comp = 0
+    cdef np.intp_t ncomp = 0
+    cdef np.intp_t[:] atom_ix
+    cdef np.intp_t[::1] comp_mask
+    cdef np.int32_t[:, ::1] bond_ix
+    cdef cmap[int, int] ix_to_rel
+    cdef bint per_compound = comp_masks is not None
+    cdef bint ref = refpos is not None
+    cdef bint weighted = weights is not None
+    cdef bint zero_weights = False
+    cdef bint success = False
+
+    assert len(ag) == len(positions)
+    if per_compound:
+        assert len(comp_masks)
+
+    if ortho:
+        # Prepare inverse box for orthorhombic wrapping:
+        inverse_box[0] = 1.0 / box[0]
+        inverse_box[1] = 1.0 / box[1]
+        inverse_box[2] = 1.0 / box[2]
+        half_box[0] = 0.5 * box[0]
+        half_box[1] = 0.5 * box[1]
+        half_box[2] = 0.5 * box[2]
+    else:
+        # Silence compiler warnings:
+        inverse_box[0] = 0.0
+        inverse_box[1] = 0.0
+        inverse_box[2] = 0.0
+        half_box[0] = 0.0
+        half_box[1] = 0.0
+        half_box[2] = 0.0
+        # TODO: Enable triclinic wrapping without bonds.
+        # Until then, we just give up and cry. ;-(
+        if not have_bonds:
+            raise NoDataError("Unwrapping (compounds of) groups in triclinic "
+                              "systems without having bond information in the "
+                              "topology is not (yet) supported.")
+
+    if per_compound:
+        ncomp = comp_masks.shape[0]
+    else:
+        ncomp = 1
+
+    if ncomp == 1:
+        # we have only one compound, so we just wrap all positions:
+        if ortho:
+            # try possible shortcuts for orthorhombic boxes:
+            success = isunwrapped_ortho(pos, hbox)
+            if not success:
+                # group is not already unwrapped, try unwrapping without bonds:
+                success = _make_whole_ortho_nobonds(pos, &box[0], hbox, ibox, 0)
+            if (not success) and (not have_bonds):
+                # ortho wrapping w/o bonds failed and no bonds available,
+                # cowardly bailing out:
+                raise NoDataError("No bonds in topology: Cannot unwrap groups "
+                                  "which span more than half the box in any "
+                                  "direction without bond information.")
+        if not success:
+            # ortho wrapping w/o bonds failed or we have a triclinic box, so we
+            # fall back to unwrapping by traversing bonds:
+            atom_ix = ag._ix
+#            print("6. ag._ix:", ag._ix)
+            bond_ix = ag.bondindices
+#            print("7. ag.bondindices:", ag.bondindices)
+            # map absolute to relative atom indices:
+            for i in range(natoms):
+#                print("ix_to_rel: {} -> {}".format(atom_ix[i], i))
+                ix_to_rel[<np.int32_t> atom_ix[i]] = <np.int32_t> i
+            success = _make_whole_bonds(pos, ix_to_rel, bond_ix, &box[0], ibox,
+                                        ortho, 0)
+            if not success:
+                raise ValueError("Cannot unwrap group: Group is not contiguous "
+                                 "from bonds (i.e., probably not a molecule).")
+        if ref:
+            if weighted:
+                zero_weights = _coords_weighted_center(pos, weights, refpos[0])
+            else:
+                _coords_center(pos, refpos[0])
+            # only apply reference shift if reference position is valid:
+            if not zero_weights:
+                shifts = np.empty((1, 3), dtype=np.float32)
+                targets = np.empty((1, 3), dtype=np.float32)
+                # first, copy origin to target arrays:
+                targets[0, 0] = refpos[0, 0]
+                targets[0, 1] = refpos[0, 1]
+                targets[0, 2] = refpos[0, 2]
+                # wrap targets:
+                if ortho:
+                    _ortho_pbc(<coordinate*> &targets[0, 0], 1, &box[0])
+                else:
+                    _triclinic_pbc(<coordinate*> &targets[0, 0], 1, &box[0])
+                # shift = target - origin:
+                shifts[0, 0] = targets[0, 0] - refpos[0, 0]
+                shifts[0, 1] = targets[0, 1] - refpos[0, 1]
+                shifts[0, 2] = targets[0, 2] - refpos[0, 2]
+                # apply the reference shift:
+                _coords_add_vector32(pos, shifts[0])
+                # copy target to refpos:
+                refpos[0, 0] = targets[0, 0]
+                refpos[0, 1] = targets[0, 1]
+                refpos[0, 2] = targets[0, 2]
+    else:
+        # we have multiple compounds, handle them one by one:
+        if ortho:
+            for i in range(ncomp):
+                success = False
+                comp_mask = comp_masks[i]
+                success = isunwrapped_ortho_masked(pos, comp_mask, hbox)
+                if not success:
+                    # compound is not unwrapped, try unwrapping without bonds:
+                    success = _make_whole_ortho_nobonds_masked(pos, comp_mask,
+                                                               &box[0], hbox,
+                                                               ibox, 0)
+                    if not success:
+#                        print("#### comp {} ####".format(i))
+#                        print("comp_mask:", np.asarray(comp_mask))
+                        if not have_bonds:
+                            # ortho wrapping w/o bonds failed and no bonds
+                            # available, cowardly bailing out:
+                            raise NoDataError("No bonds in topology: Cannot "
+                                              "unwrap compounds which span "
+                                              "more than half the box in any "
+                                              "direction without bond "
+                                              "information.")
+                        # fall back to unwrapping by traversing bonds:
+                        comp_ag = ag[comp_mask]
+                        atom_ix = comp_ag._ix
+#                        print("comp_ag._ix:", comp_ag._ix)
+                        bond_ix = comp_ag.bondindices
+#                        print("comp_ag.bondindices:", comp_ag.bondindices)
+                        ix_to_rel.clear()
+                        natoms_comp = comp_mask.shape[0]
+                        # map absolute to relative atom indices:
+                        for j in range(natoms_comp):
+#                            print("ix_to_rel: {} -> {}".format(atom_ix[j], comp_mask[j]))
+                            ix_to_rel[atom_ix[j]] = comp_mask[j]
+#                        # get a fresh copy of positions:
+#                        positions = ag.positions
+#                        pos = positions
+                        success = _make_whole_bonds(pos, ix_to_rel, bond_ix,
+                                                    &box[0], ibox, ortho,
+                                                    comp_mask[0])
+                        if not success:
+                            raise ValueError("Cannot unwrap compound: Compound "
+                                             "is not contiguous from bonds "
+                                             "(i.e., probably not a molecule).")
+        else:
+            # we have a triclinic box, so we currently have to fall back to
+            # unwrapping by traversing bonds:
+            for i in range(ncomp):
+                success = False
+                comp_mask = comp_masks[i]
+                comp_ag = ag[comp_mask]
+                atom_ix = comp_ag._ix
+                bond_ix = comp_ag.bondindices
+                ix_to_rel.clear()
+                natoms_comp = comp_mask.shape[0]
+                for j in range(natoms_comp):
+                    ix_to_rel[atom_ix[j]] = comp_mask[j]
+                success = _make_whole_bonds(pos, ix_to_rel, bond_ix, &box[0],
+                                            ibox, ortho, comp_mask[0])
+                if not success:
+                    raise ValueError("Cannot unwrap compound: Compound is not "
+                                     "contiguous from bonds (i.e., probably "
+                                     "not a molecule).")
+        if ref:
+            #print("unwrapped unshifted comp positions:", positions)
+            if weighted:
+                zero_weights = _coords_weighted_center_per_compound(pos,
+                                                                    comp_masks,
+                                                                    weights,
+                                                                    refpos)
+            else:
+                _coords_center_per_compound(pos, comp_masks, refpos)
+            # only apply reference shifts if there are no invalid reference
+            # positions:
+            if not zero_weights:
+                shiftsarr = np.empty((ncomp, 3), dtype=np.float32)
+                targets = np.empty((ncomp, 3), dtype=np.float32)
+                shifts = shiftsarr
+                # first, copy origins to targets arrays:
+                for i in range(ncomp):
+                    targets[i, 0] = refpos[i, 0]
+                    targets[i, 1] = refpos[i, 1]
+                    targets[i, 2] = refpos[i, 2]
+                # wrap the targets:
+                if ortho:
+                    _ortho_pbc(<coordinate*> &targets[0, 0], ncomp, &box[0])
+                else:
+                    _triclinic_pbc(<coordinate*> &targets[0, 0], ncomp, &box[0])
+                # shifts = targets - origins:
+                for i in range(ncomp):
+                    shifts[i, 0] = targets[i, 0] - refpos[i, 0]
+                    shifts[i, 1] = targets[i, 1] - refpos[i, 1]
+                    shifts[i, 2] = targets[i, 2] - refpos[i, 2]
+                # apply the reference shifts:
+                _coords_add_vectors(positions, shiftsarr, comp_masks)
+                # copy target from shifts to refpos:
+                for i in range(ncomp):
+                    refpos[i, 0] = targets[i, 0]
+                    refpos[i, 1] = targets[i, 1]
+                    refpos[i, 2] = targets[i, 2]
+    return zero_weights
+
+
+cdef inline bint isunwrapped_ortho(float[:, ::1]& pos, float* hbox) nogil:
+    """Check if the positions of an atomgroup are definitely unwrapped in
+    an orthorhombic unit cell.
+
+    Parameters
+    ----------
+    pos : memoryview
+        The positions to check. Must be of shape ``(n, 3)`` and type ``float``.
+    hbox : float*
+        A pointer to an array containing the half edge lengths of the system's
+        unit cell.
+
+    Returns
+    -------
+    bint
+        A boolean value indicating if the positions are unwrapped (``True``) or
+        if this cannot be decided (``False``).
+
+
+    .. versionadded:: 0.20.0
+    """
+    cdef np.intp_t i, j
+    cdef np.intp_t natoms = pos.shape[0]
+    for i in range(1, natoms):
+        for j in range(3):
+            if fabs(pos[i, j] - pos[0, j]) >= hbox[j]:
+                return False
+    return True
+
+
+cdef inline bint isunwrapped_ortho_masked(float[:, ::1]& pos,
+                                          np.intp_t[::1]& mask,
+                                          float* hbox) nogil:
+    """Check if the positions of an atomgroup are definitely unwrapped in
+    an orthorhombic unit cell.
+
+    In contrast to :func:`isunwrapped_ortho`, this function requires a `mask`
+    containing relative indices so that only the positions in `pos`
+    corresponding to the mask indices will be checked.
+
+    Parameters
+    ----------
+    pos : memoryview&
+        Referance to a C-contiguous memoryview of the positions to check.
+        Must be of shape ``(n, 3)`` and type ``float``.
+    mask : memoryview&
+        Reference to a contiguous 1d memoryview of type ``numpy.intp_t``
+        containing indices of a compound's positions in the `pos` array.
+    hbox : float*
+        A pointer to an array containing the half edge lengths of the system's
+        unit cell.
+
+    Returns
+    -------
+    bint
+        A boolean value indicating if the positions are unwrapped (``True``) or
+        if this cannot be decided (``False``).
+
+
+    .. versionadded:: 0.20.0
+    """
+    cdef np.intp_t i, j, k
+    cdef np.intp_t natoms = mask.shape[0]
+    cdef np.intp_t ref = mask[0]
+    for i in range(1, natoms):
+        k = mask[i]
+        for j in range(3):
+            if fabs(pos[k, j] - pos[ref, j]) >= hbox[j]:
+                return False
+    return True
 
 
 cdef float _dot(float * a, float * b):
@@ -1251,7 +1888,8 @@ cdef void _cross(float * a, float * b, float * result):
     result[1] = - a[0]*b[2] + a[2]*b[0]
     result[2] = a[0]*b[1] - a[1]*b[0]
 
-cdef float _norm(float * a):
+
+cdef float _norm(float* a):
     """
     Calculates the magnitude of the vector
     """
@@ -1263,7 +1901,7 @@ cdef float _norm(float * a):
     return sqrt(result)
 
 
-cpdef np.float64_t _sarrus_det_single(np.float64_t[:, ::1] m):
+cpdef np.float64_t _sarrus_det_single(np.float64_t[:, ::1] m) nogil:
     """Computes the determinant of a 3x3 matrix."""
     cdef np.float64_t det
     det = m[0, 0] * m[1, 1] * m[2, 2]
@@ -1289,7 +1927,7 @@ cpdef np.ndarray _sarrus_det_multiple(np.float64_t[:, :, ::1] m):
         det[i] -= m[i, 0, 1] * m[i, 1, 0] * m[i, 2, 2]
         det[i] += m[i, 0, 2] * m[i, 1, 0] * m[i, 2, 1]
         det[i] -= m[i, 0, 2] * m[i, 1, 1] * m[i, 2, 0]
-    return np.array(det)
+    return np.asarray(det)
 
 
 def find_fragments(atoms, bondlist):
@@ -1318,10 +1956,10 @@ def find_fragments(atoms, bondlist):
     cdef intset todo, frag_todo, frag_done
     cdef vector[int] this_frag
     cdef int i, a, b
-    cdef np.int64_t[:] atoms_view
+    cdef np.intp_t[:] atoms_view
     cdef np.int32_t[:, :] bonds_view
 
-    atoms_view = np.asarray(atoms, dtype=np.int64)
+    atoms_view = np.asarray(atoms, dtype=np.intp)
     bonds_view = np.asarray(bondlist, dtype=np.int32)
 
     # grab record of which atoms I have to process
