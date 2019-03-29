@@ -2378,3 +2378,44 @@ def check_compound(compound, atoms=False):
             raise ValueError("Unrecognized compound definition '{}'. "
                              "Please use one of {}.".format(compound, valid))
         return comp
+
+
+def _check_histogram_array(histogram, n=None, desc=None):
+    """Check the histogram array is ok to use
+
+    Must be:
+      (n,) in shape
+      int64 data
+    """
+    if desc is None:
+        desc = "Histogram array"
+    if (histogram.ndim != 1):
+        raise ValueError("{0} has incorrect number of dimensions, "
+                         "should be 1-dimensional, "
+                         "got {1} dimensions".format(desc, histogram.ndim))
+    if ((n is not None) and histogram.shape[0] != n):
+        raise ValueError("{0} has incorrect shape, should be ({1},), "
+                         "got ({2},)".format(desc, n, histogram.shape[0]))
+    if histogram.dtype != np.int64:
+        raise TypeError("{0} must be of type int64")
+    if not histogram.flags['CARRAY']:
+        raise ValueError("Histogram is not C-contiguous.")
+
+
+def _check_histogram_range(value, desc):
+    """Check if the histogram range is valid
+
+    Must be:
+      iterable of length 2
+      first element must be greater than or equal to zero
+      first element must be strictly smaller than second
+    """
+    if len(value) != 2:
+        raise ValueError("Length of {0} must be 2, got {1}".format(desc, \
+                                                                   len(value)))
+    if value[0] < 0.0:
+        raise ValueError("First element of {0} must be greater than or equal \
+                         to 0.0, got {1}".format(desc, value[0]))
+    if value[0] >= value[1]:
+        raise ValueError("First element of {0} must be greater than second, \
+                          got {1}".format(desc, value))

@@ -55,6 +55,8 @@ Functions
 ---------
 .. autofunction:: distance_array
 .. autofunction:: self_distance_array
+.. autofunction:: distance_histogram
+.. autofunction:: self_distance_histogram
 .. autofunction:: capped_distance
 .. autofunction:: self_capped_distance
 .. autofunction:: calc_bonds
@@ -72,6 +74,7 @@ from six.moves import range
 import numpy as np
 from numpy.lib.utils import deprecate
 
+from . import util
 from .util import check_coords, check_box
 from .mdamath import triclinic_vectors
 from ._augment import augment_coordinates, undo_augment
@@ -105,12 +108,15 @@ def _run(funcname, args=None, kwargs=None, backend="serial"):
 
 # serial versions are always available (and are typically used within
 # the core and topology modules)
-from .c_distances import (calc_distance_array,
+from .c_distances import (PBCtype,
+                          calc_distance_array,
                           calc_distance_array_ortho,
                           calc_distance_array_triclinic,
                           calc_self_distance_array,
                           calc_self_distance_array_ortho,
                           calc_self_distance_array_triclinic,
+                          calc_distance_histogram,
+                          calc_self_distance_histogram,
                           coord_transform,
                           calc_bond_distance,
                           calc_bond_distance_ortho,
@@ -1108,6 +1114,186 @@ def _nsgrid_capped_self(reference, max_cutoff, min_cutoff=None, box=None,
     if return_distances:
         return pairs, distances
     return pairs
+
+@check_coords('reference', 'configuration', enforce_copy=False,
+              reduce_result_if_single=False)
+def distance_histogram(reference, configuration, histogram_range,
+                       histogram=None, n_bins=None, box=None, backend="serial"):
+    """Calculate a histogram of all distances between a `reference` set and
+    another `configuration`.
+
+    If a `box` is supplied, a minimum image convention is applied when
+    calculating distances.
+
+    If a 1D numpy array of dtype ``numpy.int64`` is provided in `histogram`, the
+    resulting histogram is *added* to this preallocated array.
+    This can speed up calculations.
+
+    Otherwise, the number of histogram bins must be specified with `n_bins`.
+
+    Parameters
+    ----------
+    reference : numpy.ndarray
+        Reference coordinate array of shape ``(n_ref, 3)`` and dtype
+        ``numpy.float32``.
+    reference : numpy.ndarray
+        Reference coordinate array of shape ``(n_conf, 3)`` and dtype
+        ``numpy.float32``.
+    histogram_range : ``(float, float)``
+        The minimum and maximum distance of the histogram. Distances outside of
+        `range` are ignored. The first element must be strictly less than the
+        second.
+    histogram : 1D ``numpy.ndarray`` with ``dtype=numpy.int64``, optional
+        Preallocated histogram array to which the result is *added*.
+        Must be supplied if `n_bins` is not given.
+    n_bins : ``int``, optional
+        Number of histogram bins. Must be given if `histogram` is not supplied.
+        If `histogram` is supplied, `n_bins` must be either ``None`` or equal to
+        ``len(histogram)``.
+    box : ``numpy.ndarray``, optional
+        Dimensions of the cell; if provided, the minimum image convention is
+        applied. The dimensions must be provided in the same format as returned
+        by :attr:`MDAnalysis.coordinates.base.Timestep.dimensions`: ``[lx,
+        ly, lz, alpha, beta, gamma]``.
+    backend : ``str``, optional (default: ``"serial"``)
+        Select the type of acceleration; ``"serial"`` is always available. Other
+        possibilities are ``"OpenMP"`` (OpenMP).
+
+    Returns
+    -------
+    h : 1D ``numpy.ndarray`` with ``dtype=np.int64``
+        Numpy array with the histogram of all ``N*M`` distances ``d[i,j]``
+        between reference coordinates ``i`` and configuration coordinates ``j``.
+        If the input parameter `histogram` is supplied, the histogram will be
+        *added* to this array and the returned array will be a reference of the
+        `histogram` array.
+
+    Note
+    ----
+    This method is slower than it could be because internally we need to make
+    copies of the ref and conf arrays.
+
+
+    .. versionadded:: 0.17.1
+    """
+
+    confnum = configuration.shape[0]
+    refnum = reference.shape[0]
+
+    util._check_histogram_range(histogram_range, 'histogram_range')
+
+    if histogram is not None:
+        util._check_histogram_array(histogram, n_bins, 'histogram')
+    elif n_bins != None:
+        histogram = np.zeros((n_bins,), np.int64)
+    else:
+        raise ValueError("Either histogram or n_bins must be specified.")
+
+    if confnum == 0 or refnum == 0:
+        return histogram
+
+    pbc_type = PBCtype.none
+    if box is not None:
+        boxtype, box = check_box(box)
+        if boxtype == 'ortho':
+            pbc_type = PBCtype.ortho
+        else:
+            box = box.ravel()
+            pbc_type = PBCtype.triclinic
+
+    _run("calc_distance_histogram",
+         args=(reference, configuration, box, pbc_type, histogram,
+               histogram_range[0], histogram_range[1]),
+         backend=backend)
+
+    return histogram
+
+@check_coords('reference', enforce_copy=False, reduce_result_if_single=False)
+def self_distance_histogram(reference, histogram_range, histogram=None,
+                            n_bins=None, box=None, backend="serial"):
+    """Calculate a histogram of all distances within a configuration
+    `reference`.
+
+    If a `box` is supplied, a minimum image convention is applied when
+    calculating distances.
+
+    If a 1D ``numpy.ndarray`` of dtype ``numpy.int64`` is provided in
+    `histogram`, the resulting histogram is *added* to this preallocated array.
+    This can speed up calculations.
+
+    Otherwise, the number of histogram bins must be specified with `n_bins`.
+
+    Parameters
+    ----------
+    reference : numpy.ndarray
+        Reference coordinate array of shape ``(n_coords, 3)`` and dtype
+        ``numpy.float32``.
+    histogram_range : ``(float, float)``
+        The minimum and maximum distance of the histogram. Distances outside of
+        `range` are ignored. The first element must be strictly less than the
+        second.
+    histogram : 1D ``numpy.ndarray`` with dtype ``numpy.int64``, optional
+        Preallocated histogram array to which the result is *added*.
+        Must be supplied if `n_bins` is not given.
+    n_bins : ``int``, optional
+        Number of histogram bins. Must be given if `histogram` is not supplied.
+        If `histogram` is supplied, `n_bins` must be either ``None`` or equal to
+        ``len(histogram)``.
+    box : ``numpy.ndarray``, optional
+        Dimensions of the cell; if provided, the minimum image convention is
+        applied. The dimensions must be provided in the same format as returned
+        by :attr:`MDAnalysis.coordinates.base.Timestep.dimensions`: ``[lx,
+        ly, lz, alpha, beta, gamma]``.
+    backend : ``str``, optional (default: ``"serial"``)
+        Select the type of acceleration; ``"serial"`` is always available. Other
+        possibilities are ``"OpenMP"`` (OpenMP).
+
+    Returns
+    -------
+    h : 1D ``numpy.ndarray`` with dtype ``np.int64``
+        Numpy array with the histogram of all ``N*(N-1)/2`` unique distances
+        ``d[i,j]`` between coordinates ``i`` and ``j``, ``i != j``.
+        If the input parameter `histogram` is supplied, the histogram will be
+        *added* to this array and the returned array will be a reference of the
+        `histogram` array.
+
+    Note
+    ----
+    This method is slower than it could be because internally we need to make
+    copies of the ref and conf arrays.
+
+
+    .. versionadded:: 0.17.1
+    """
+    refnum = reference.shape[0]
+
+    util._check_histogram_range(histogram_range, 'histogram_range')
+
+    if histogram is not None:
+        util._check_histogram_array(histogram, n_bins, 'histogram')
+    elif n_bins != None:
+        histogram = np.zeros((n_bins,), np.int64)
+    else:
+        raise ValueError("Either histogram or n_bins must be specified.")
+
+    if refnum == 0:
+        return histogram
+
+    pbc_type = PBCtype.none
+    if box is not None:
+        boxtype, box = check_box(box)
+        if boxtype == 'ortho':
+            pbc_type = PBCtype.ortho
+        else:
+            box = box.ravel()
+            pbc_type = PBCtype.triclinic
+
+    _run("calc_self_distance_histogram",
+         args=(reference, box, pbc_type, histogram, histogram_range[0],
+         histogram_range[1]),
+         backend=backend)
+
+    return histogram
 
 
 @check_coords('coords')

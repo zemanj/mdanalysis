@@ -36,33 +36,85 @@ Parallel distance calculation library --- :mod:`MDAnalysis.lib.c_distances_openm
 Contains OpenMP versions of the contents of "calc_distances.h"
 """
 
-cdef extern from "string.h":
-    void* memcpy(void* dst, void* src, int len)
+cimport openmp
+
+from libc.stdint cimport int64_t
 
 cdef extern from "calc_distances.h":
     ctypedef float coordinate[3]
+    ctypedef int64_t histbin
     cdef bint USED_OPENMP
-    void _calc_distance_array(coordinate* ref, int numref, coordinate* conf, int numconf, double* distances)
-    void _calc_distance_array_ortho(coordinate* ref, int numref, coordinate* conf, int numconf, float* box, double* distances)
-    void _calc_distance_array_triclinic(coordinate* ref, int numref, coordinate* conf, int numconf, float* box, double* distances)
-    void _calc_self_distance_array(coordinate* ref, int numref, double* distances)
-    void _calc_self_distance_array_ortho(coordinate* ref, int numref, float* box, double* distances)
-    void _calc_self_distance_array_triclinic(coordinate* ref, int numref, float* box, double* distances)
+    cdef int _BLOCKSIZE
+    cdef enum PBCenum "ePBC":
+        PBCortho, PBCtriclinic, PBCnone, PBCunknown
+    void _calc_distance_array(coordinate* ref, int numref, coordinate* conf,
+                              int numconf, double* distances)
+    void _calc_distance_array_ortho(coordinate* ref, int numref,
+                                    coordinate* conf, int numconf, float* box,
+                                    double* distances)
+    void _calc_distance_array_triclinic(coordinate* ref, int numref,
+                                        coordinate* conf, int numconf,
+                                        float* box, double* distances)
+    void _calc_self_distance_array(coordinate* ref, int numref,
+                                   double* distances)
+    void _calc_self_distance_array_ortho(coordinate* ref, int numref,
+                                         float* box, double* distances)
+    void _calc_self_distance_array_triclinic(coordinate* ref, int numref,
+                                             float* box, double* distances)
+    void _calc_distance_histogram(coordinate* ref, int numref, coordinate* conf,
+                                  int numconf, float* box, PBCenum pbc_type,
+                                  double rmin, double rmax, histbin* histo,
+                                  int numhisto)
+    void _calc_distance_histogram_vectorized(coordinate* ref, int numref,
+                                             coordinate* conf, int numconf,
+                                             float* box, PBCenum pbc_type,
+                                             double rmin, double rmax,
+                                             histbin* histo, int numhisto)
+    void _calc_self_distance_histogram(coordinate* ref, int numref, float* box,
+                                       PBCenum pbc_type, double rmin,
+                                       double rmax, histbin* histo,
+                                       int numhisto)
+    void _calc_self_distance_histogram_vectorized(coordinate* ref, int numref,
+                                                  float* box, PBCenum pbc_type,
+                                                  double rmin, double rmax,
+                                                  histbin* histo, int numhisto)
     void _coord_transform(coordinate* coords, int numCoords, double* box)
-    void _calc_bond_distance(coordinate* atom1, coordinate* atom2, int numatom, double* distances)
-    void _calc_bond_distance_ortho(coordinate* atom1, coordinate* atom2, int numatom, float* box, double* distances)
-    void _calc_bond_distance_triclinic(coordinate* atom1, coordinate* atom2, int numatom, float* box, double* distances)
-    void _calc_angle(coordinate* atom1, coordinate* atom2, coordinate* atom3, int numatom, double* angles)
-    void _calc_angle_ortho(coordinate* atom1, coordinate* atom2, coordinate* atom3, int numatom, float* box, double* angles)
-    void _calc_angle_triclinic(coordinate* atom1, coordinate* atom2, coordinate* atom3, int numatom, float* box, double* angles)
-    void _calc_dihedral(coordinate* atom1, coordinate* atom2, coordinate* atom3, coordinate* atom4, int numatom, double* angles)
-    void _calc_dihedral_ortho(coordinate* atom1, coordinate* atom2, coordinate* atom3, coordinate* atom4, int numatom, float* box, double* angles)
-    void _calc_dihedral_triclinic(coordinate* atom1, coordinate* atom2, coordinate* atom3, coordinate* atom4, int numatom, float* box, double* angles)
+    void _calc_bond_distance(coordinate* atom1, coordinate* atom2, int numatom,
+                             double* distances)
+    void _calc_bond_distance_ortho(coordinate* atom1, coordinate* atom2,
+                                   int numatom, float* box, double* distances)
+    void _calc_bond_distance_triclinic(coordinate* atom1, coordinate* atom2,
+                                       int numatom, float* box,
+                                       double* distances)
+    void _calc_angle(coordinate* atom1, coordinate* atom2, coordinate* atom3,
+                     int numatom, double* angles)
+    void _calc_angle_ortho(coordinate* atom1, coordinate* atom2,
+                           coordinate* atom3, int numatom, float* box,
+                           double* angles)
+    void _calc_angle_triclinic(coordinate* atom1, coordinate* atom2,
+                               coordinate* atom3, int numatom, float* box,
+                               double* angles)
+    void _calc_dihedral(coordinate* atom1, coordinate* atom2, coordinate* atom3,
+                        coordinate* atom4, int numatom, double* angles)
+    void _calc_dihedral_ortho(coordinate* atom1, coordinate* atom2,
+                              coordinate* atom3, coordinate* atom4, int numatom,
+                              float* box, double* angles)
+    void _calc_dihedral_triclinic(coordinate* atom1, coordinate* atom2,
+                                  coordinate* atom3, coordinate* atom4,
+                                  int numatom, float* box, double* angles)
     void _ortho_pbc(coordinate* coords, int numcoords, float* box)
     void _triclinic_pbc(coordinate* coords, int numcoords, float* box)
 
 
 OPENMP_ENABLED = True if USED_OPENMP else False
+BLOCKSIZE = _BLOCKSIZE
+
+class PBCtype(object):
+    # wrapper to expose the ePBC enumerator to Python
+    ortho = PBCortho
+    triclinic = PBCtriclinic
+    none = PBCnone
+    unknown = PBCunknown
 
 def calc_distance_array(float[:, ::1] ref, float[:, ::1] conf,
                         double[:, ::1] result):
@@ -114,6 +166,55 @@ def calc_self_distance_array_triclinic(float[:, ::1] ref, float[:, ::1] box,
 
     _calc_self_distance_array_triclinic(<coordinate*> &ref[0, 0], refnum,
                                         &box[0, 0], &result[0])
+
+def calc_distance_histogram(float[:, ::1] ref, float[:, ::1] conf,
+                            float[::1 ]box, PBCenum pbc_type,
+                            histbin[::1] histo, double r_min, double r_max):
+    cdef int confnum, refnum, histonum, numthreads
+    cdef float* box_ptr
+    confnum = conf.shape[0]
+    refnum = ref.shape[0]
+    histonum = histo.shape[0]
+    numthreads = openmp.omp_get_num_threads()
+
+    if box is None:
+        box_ptr = NULL
+    else:
+        box_ptr = &box[0]
+
+    if (refnum / numthreads) < BLOCKSIZE:
+        _calc_distance_histogram(<coordinate*> &ref[0, 0], refnum,
+                                 <coordinate*> &conf[0, 0], confnum, box_ptr,
+                                 pbc_type, r_min, r_max, &histo[0], histonum)
+    else:
+        _calc_distance_histogram_vectorized(<coordinate*> &ref[0, 0], refnum,
+                                            <coordinate*> &conf[0, 0], confnum,
+                                            box_ptr, pbc_type, r_min, r_max,
+                                            &histo[0], histonum)
+
+def calc_self_distance_histogram(float[:, ::1] ref, float[::1] box,
+                                 PBCenum pbc_type, histbin[::1] histo,
+                                 double r_min, double r_max):
+    cdef int refnum, histonum, numthreads
+    cdef float* box_ptr
+    refnum = ref.shape[0]
+    histonum = histo.shape[0]
+    numthreads = openmp.omp_get_num_threads()
+
+    if box is None:
+        box_ptr = NULL
+    else:
+        box_ptr = &box[0]
+
+    if (refnum / numthreads) < BLOCKSIZE:
+        _calc_self_distance_histogram(<coordinate*> &ref[0, 0], refnum, box_ptr,
+                                      pbc_type, r_min, r_max, &histo[0],
+                                      histonum)
+    else:
+        _calc_self_distance_histogram_vectorized(<coordinate*> &ref[0, 0],
+                                                 refnum, box_ptr, pbc_type,
+                                                 r_min, r_max, &histo[0],
+                                                 histonum)
 
 def coord_transform(float[:, ::1] coords, double[:, ::1] box):
     cdef int numcoords
