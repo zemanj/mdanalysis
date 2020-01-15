@@ -112,7 +112,7 @@ class XDRBaseReader(base.ReaderBase):
 
     """
     def __init__(self, filename, convert_units=True, sub=None,
-                 refresh_offsets=False, **kwargs):
+                 refresh_offsets=False, check_offsets=True, **kwargs):
         """
         Parameters
         ----------
@@ -126,6 +126,8 @@ class XDRBaseReader(base.ReaderBase):
             itself is that of the sub system.
         refresh_offsets : bool (optional)
             force refresh of offsets
+        check_offsets : bool (optional)
+            check whether stored offsets are outdated
         **kwargs : dict
             General reader arguments.
 
@@ -142,7 +144,7 @@ class XDRBaseReader(base.ReaderBase):
             self.n_atoms = self._xdr.n_atoms
 
         if not refresh_offsets:
-            self._load_offsets()
+            self._load_offsets(check_offsets=check_offsets)
         else:
             self._read_offsets(store=True)
         frame = self._xdr.read()
@@ -172,7 +174,7 @@ class XDRBaseReader(base.ReaderBase):
         """close reader"""
         self._xdr.close()
 
-    def _load_offsets(self):
+    def _load_offsets(self, check_offsets=True):
         """load frame offsets from file, reread them from the trajectory if that
         fails"""
         fname = offsets_filename(self.filename)
@@ -193,9 +195,14 @@ class XDRBaseReader(base.ReaderBase):
             pass
 
         if not (ctime_ok and size_ok and n_atoms_ok):
-            warnings.warn("Reload offsets from trajectory\n "
-                          "ctime or size or n_atoms did not match")
-            self._read_offsets(store=True)
+            if not check_offsets:
+                warnings.warn("Ignoring outdated trajectory offsets\n "
+                              "ctime or size or n_atoms did not match but check_offsets=False")
+                self._xdr.set_offsets(data['offsets'])
+            else:
+                warnings.warn("Reload offsets from trajectory\n "
+                              "ctime or size or n_atoms did not match")
+                self._read_offsets(store=True)
         else:
             self._xdr.set_offsets(data['offsets'])
 

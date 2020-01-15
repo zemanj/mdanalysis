@@ -1116,7 +1116,7 @@ def _nsgrid_capped_self(reference, max_cutoff, min_cutoff=None, box=None,
     return pairs
 
 @check_coords('reference', 'configuration', enforce_copy=False,
-              reduce_result_if_single=False)
+              reduce_result_if_single=False, check_lengths_match=False)
 def distance_histogram(reference, configuration, histogram_range,
                        histogram=None, n_bins=None, box=None, backend="serial"):
     """Calculate a histogram of all distances between a `reference` set and
